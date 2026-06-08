@@ -154,3 +154,11 @@ Vivado `report_power` (vectorless, post-route) on `arty_top` → **63 mW total o
 **Synthesis (xc7a35t, P=4): 931 LUTs (4.5%), 0 DSP, 208 CARRY4** — exactly 4× the single dot (233 LUTs): linear scaling, multiply-free. The 35T has LUT room for dozens of lanes, but the real ceiling is the DDR3 weight bandwidth (~0.6–0.8 GB/s), so P is sized to the roofline, not the LUT budget. Updated `bench/results/utilization.md`.
 
 **Next (cycle 13):** fold the 280 MHz `ternary_dot_pipe` into a streaming `valid`-tracked GEMV (parallel × pipelined), then wire toward the DDR3 tile feed — the Phase-1 datapath that yields a real on-board tokens/sec. Still GPU-free.
+
+### Phase 0+, cycle 13 — streaming pipelined GEMV: the engine runs at 280 MHz ✅
+
+`rtl/ternary_gemv_pipe.sv`: the row-streamed GEMV driven by `ternary_dot_pipe` (3-stage) instead of the combinational dot. Rows stream 1/cycle; the 3-cycle latency is absorbed by tracking `valid_out` (k-th result = row k, order preserved) — no cycle-counting. Test-first (`tb_ternary_gemv_pipe.py`, 40 GEMVs streamed back-to-back): **bit-exact**.
+
+**Synthesis (xc7a35t): 351 LUTs, 742 FF, 0 DSP, ~280 MHz** — 2.7× the combinational GEMV's ~104 MHz, carrying the pipelining win through to the full matrix-vector. This is the high-clock streaming shape the on-board decode datapath will use. Updated `bench/results/utilization.md`.
+
+**Next (cycle 14):** the **weight-feed front-end** — a FIFO / double-buffer that turns a DDR3-style burst of dense base-3 bytes into the `w_row` stream (`ternary_unpack5` → `valid`), so the streaming GEMV can be fed from memory; the first concrete piece of the Phase-1 DDR3 datapath. Still GPU-free.
