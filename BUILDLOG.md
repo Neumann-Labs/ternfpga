@@ -104,3 +104,11 @@ Built the bridge from a trained BitNet model to the engine, and validated the RT
 Honesty note: 34% is *static weight* sparsity; Direction D's bigger lever is *activation* sparsity (85–95%, dynamic per-token), a separate runtime quantity — both are exploitable by `ternary_gemv_sparse`'s gather. `models/README.md` documents the pipeline.
 
 **Next (cycle 7):** parallelize the engine — a `P`-lane `ternary_pe_array` (bandwidth-matched, the throughput step) and/or pipeline the K-wide adder tree to lift Fmax past the v0 ~104–116 MHz; then a weight-unpacker (5 ternary/byte dense packing) toward the DDR3 streaming path. Still GPU-free.
+
+### Phase 0, cycle 7 — pipelined dot: Fmax 104 → 280 MHz ✅
+
+`rtl/ternary_dot_pipe.sv` — the multiply-free dot, but the K-wide reduction is split into **3 registered stages** (sign-select → two half-sums → final sum), so no combinational path runs the whole adder tree. Streaming: a new input every cycle, 1 result/cycle, `valid_in` pipelined to `valid_out`. Test-first (`tb_ternary_dot_pipe.py`, 800 streamed dots, FIFO-tracked vs the golden): **bit-exact**.
+
+**Synthesis (xc7a35t):** critical path drops from ~14 → **4 logic levels**; WNS +0.424 ns @4 ns → **Fmax ~280 MHz** (2.7× the ~104 MHz combinational GEMV), at **149 LUTs / 129 FF / 0 DSP** (it even shrinks — registers break the tree into cheaper pieces). The latency cost is 3 cycles, irrelevant for a streaming engine. Updated `bench/results/utilization.md`.
+
+**Next (cycle 8):** fold the pipelined lane into the GEMV/gather datapath (a `valid`-tracked streaming GEMV at the higher clock), and/or build the **weight-unpacker** (dense 5-ternary/byte → 2-bit codes) that feeds it from a DDR3 burst — the first piece of the real memory path. Still GPU-free.
