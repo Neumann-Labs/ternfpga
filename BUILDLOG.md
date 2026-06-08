@@ -178,3 +178,19 @@ Vivado `report_power` (vectorless, post-route) on `arty_top` → **63 mW total o
 **Synthesis (xc7a35t): 405 LUTs (2%), 796 FF, 0 DSP, ~184 MHz** (K=10's wider half-sum stage trims Fmax from the K=8 pipe's 280 MHz — still comfortably above the 100 MHz target; an extra pipe stage recovers it if needed). This is the unit a LiteDRAM/MIG front-end will drive on-board: point it at a weight tile in DRAM, stream the burst, read `y`. Updated `bench/results/utilization.md`.
 
 **Next (cycle 16):** begin the **LiteX/LiteDRAM DDR3 bring-up** — install LiteX on worker4, generate a minimal SoC for the Arty's MT41K128M16 DDR3, and build it. This is the large heart of Phase 1 (a multi-step subproject with real-hardware DDR3 calibration risk); still GPU-free. After it: DMA a weight tile from DRAM into `ternary_tile` on-board.
+
+### GPU baseline + the energy/token head-to-head ✅ (maintenance window)
+
+User opened a worker4 maintenance window to set up the GPU. Installed `nvidia-driver-580` (DKMS — **no kernel change**), wrote the nouveau blacklist, and did a **live nouveau→nvidia module swap** (nouveau refcount 0; an AMD Radeon drives the display, so the 3060 is pure compute) — so **no reboot was needed** and `tailscaled` (the only path to the box) never dropped. `nvidia-smi`: RTX 3060 12GB, driver 580.159.03, CUDA 13.0. Then a CUDA-PyTorch venv (`/srv/fpga/gpu-venv`, torch 2.6+cu124; transformers pinned `<5` — the 5.x release's model-class imports are broken). `bench/gpu_baseline/run_gpu.py` measures decode tok/s + `nvidia-smi` power → J/token.
+
+**The head-to-head (BitNet-2B-4T, batch-1, 256 tok):**
+
+| platform | path | tok/s | power | J/token |
+|---|---|---|---|---|
+| CPU 5950X | i2_s ternary | 28.4 | ~121 W | 4.62 |
+| **GPU 3060** | **bf16 (dequantized)** | 23.5 | 86.4 W | **3.67** |
+| FPGA Arty | ternary, 0 DSP | — | ~0.06–0.5 W | target ~0.25–0.4 |
+
+**The thesis, measured:** the 3060 has no ternary datapath, so it dequantizes BitNet to bf16 (4.87 GB) and gets **3.67 J/tok — barely better than the CPU's native-ternary 4.62, and actually slower** (23.5 vs 28.4 tok/s). The GPU extracts almost no value from the 1.58-bit weights — the exact gap the FPGA exploits (0-DSP ternary, sub-watt). The GPU's best-foot dense run (Qwen-1.5B) is 1.82 J/tok — still ~5–7× over the FPGA target. Captured in `bench/results/gpu_baseline.md`.
+
+This closes the **baseline triad** (CPU + GPU measured, FPGA power-profiled + silicon-verified). The remaining work to a *measured* FPGA J/token is the Phase-1 on-board DDR3 inference datapath.
