@@ -170,3 +170,11 @@ Vivado `report_power` (vectorless, post-route) on `arty_top` → **63 mW total o
 **Synthesis (xc7a35t): 75 LUTs, 18 FF, 0 DSP, ~777 MHz** — trivial and far above the engine clock, so the byte→row bridge is never the bottleneck. The memory side of the datapath now exists; the remaining gap to a full on-board GEMV-from-memory is wiring `weight_feed → ternary_gemv_pipe` and a DDR3 (LiteDRAM/MIG) source for the bytes.
 
 **Next (cycle 15):** integrate `weight_feed → ternary_gemv_pipe` into a single **`ternary_tile`** (GEMV directly from a base-3 byte burst, end to end in sim), then stand up **LiteX/LiteDRAM** DDR3 bring-up on the Arty to source real weight bursts — the heart of Phase 1. Still GPU-free.
+
+### Phase 1, cycle 15 — ternary_tile: GEMV from a byte burst, end to end ✅
+
+`rtl/ternary_tile.sv` composes the verified pieces into the in-sim memory→compute path: `wbyte` stream → `weight_feed` → `{w_row,valid}` → `ternary_gemv_pipe` → `y = W·x`. Test-first (`tb_ternary_tile.py`, 30 trials, K=10/M=16, the whole weight matrix streamed as base-3 bytes): **bit-exact**.
+
+**Synthesis (xc7a35t): 405 LUTs (2%), 796 FF, 0 DSP, ~184 MHz** (K=10's wider half-sum stage trims Fmax from the K=8 pipe's 280 MHz — still comfortably above the 100 MHz target; an extra pipe stage recovers it if needed). This is the unit a LiteDRAM/MIG front-end will drive on-board: point it at a weight tile in DRAM, stream the burst, read `y`. Updated `bench/results/utilization.md`.
+
+**Next (cycle 16):** begin the **LiteX/LiteDRAM DDR3 bring-up** — install LiteX on worker4, generate a minimal SoC for the Arty's MT41K128M16 DDR3, and build it. This is the large heart of Phase 1 (a multi-step subproject with real-hardware DDR3 calibration risk); still GPU-free. After it: DMA a weight tile from DRAM into `ternary_tile` on-board.
