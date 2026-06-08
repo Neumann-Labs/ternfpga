@@ -138,3 +138,11 @@ Closed the author→synth→flash→**observe** loop on the physical Arty A7-35T
 The road there (honest, for the blog): UART sim-verified first. On-board, the result read `y=0` while `c` incremented correctly — a baud sweep proved the data was fine (132/133 lines decoded; the initial 0/0 was FT2232H settling), so the bug was logic. Wrote `tb_arty_top.py` (full integration sim) which **reproduced** `y=0`; probing internals showed the dot's inputs correct (`a_flat=0x0303…`, `w_flat=0xAA55`) but output 0. Root cause: **`0xAA55` packs `[+1×4,−1×4]` = sum 0**, not the intended +2; the correct constant is **`0xA955`**. Three unit tests passed but missed it — the integration test earned its keep. Fixed → rebuilt → reflashed → verified.
 
 **Next (cycle 11):** a Vivado **`report_power`** estimate for the engine (a GPU-free energy data point), and/or begin the on-board inference datapath (DDR3/LiteX) — the larger build toward the real energy/token head-to-head, whose GPU side is the step that finally needs the RTX 3060.
+
+### Phase 0, cycle 11 — FPGA power envelope ✅ (the energy denominator)
+
+Vivado `report_power` (vectorless, post-route) on `arty_top` → **63 mW total on-chip** (62 mW static leakage + 1 mW dynamic; medium confidence). Reproducible: `syn/report_power.{tcl,sh}`. Captured in `bench/results/power.md`.
+
+**The denominator of the thesis:** the xc7a35t chip draws ~0.06 W here — ~1900× under the 5950X's 121 W and ~2700× under a 3060's ~170 W. Even at the FPGA's far-lower throughput, a 3-orders-of-magnitude power gap is what makes ternary-on-FPGA win on energy/token. Honest: the demo's 1 mW dynamic is unrepresentative (it barely toggles); a busy engine lands ~0.2–0.5 W, still sub-watt. The accurate J/token needs a SAIF of the real engine + measured tokens/sec.
+
+**Phase 0 is essentially complete.** The ternary engine is designed, **bit-exact in sim** (7 testbenches), **0-DSP-confirmed in synthesis**, validated on **real BitNet weights**, **running on real silicon** (verified over UART), and **power-profiled**. What remains before the energy/token head-to-head is (a) the on-board inference datapath — DDR3/LiteX streaming, a large build — and (b) the **GPU baseline, which needs the RTX 3060**. That is: the autonomous build has reached the point where the next decisive measurement requires the GPU.
