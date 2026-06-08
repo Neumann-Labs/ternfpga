@@ -120,3 +120,11 @@ Honesty note: 34% is *static weight* sparsity; Direction D's bigger lever is *ac
 Test-first, **exhaustive**: `tb_ternary_unpack5.py` checks all 243 bytes (RTL decode == Python golden, round-trip exact). **Synthesis (xc7a35t): 36 LUTs, 0 DSP, 0 CARRY** (Vivado folds the ÷3 / %3 chain into pure LUTs). Suite now: `dot` + `gemv` + `sparse` + `pipe` + `unpack`, all green.
 
 **Next (cycle 9):** assemble the **streaming GEMV** that ties it together — DDR3-burst → `ternary_unpack5` → pipelined dot lane → accumulate, `valid`-tracked end to end at the higher clock; the first module shaped like the real decode datapath. Still GPU-free (the on-board DDR3 bring-up via LiteX/MIG is the larger follow-on).
+
+### Phase 0, cycle 9 — packed-weight GEMV: the first real datapath integration ✅
+
+`rtl/ternary_gemv_packed.sv` ties cycle 8 + cycle 1 together: weight rows arrive in the **dense base-3 layout** (the on-DDR3 format), a generate-array of `ternary_unpack5` decodes them to lane codes, and `ternary_dot` does the multiply-free reduction — `y = W·x` straight from packed bytes, **0 DSP** end to end. Test-first (`tb_ternary_gemv_packed.py`, K=10/M=16, rows packed via `pack_row_trits5`): **40 GEMVs bit-exact**.
+
+**Synthesis (xc7a35t): 603 LUTs, 625 FF, 0 DSP, ~104 MHz** (WNS −5.627 ns @4 ns; the unpack is nearly free — the critical path is still the combinational K-wide adder tree, so folding in `ternary_dot_pipe` is the Fmax follow-up). This is the first module shaped like the real decode datapath (memory burst → unpack → MAC). Suite: dot + gemv + sparse + pipe + unpack + packed, all green. Updated `bench/results/utilization.md`, `docs/ARCHITECTURE.md`.
+
+**Next (cycle 10):** the big one — start the **on-board path**: a minimal top (the ternary engine + a UART/GPIO readout) synthesized to a real bitstream and flashed to the Arty A7-35T, closing the author→synth→flash→observe loop on actual silicon. Still GPU-free; the "real hardware" milestone the repo has been building toward.

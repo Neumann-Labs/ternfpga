@@ -34,9 +34,12 @@ the eventual model-export pipeline must both match it bit-for-bit.
 ## Module hierarchy (current)
 
 ```
-ternary_dot          combinational K-wide multiply-free dot product
-  └─ used by ──► ternary_gemv     row-streamed matrix-vector (y = W·x)
-                   (1 row/cycle, 1 dot lane — v0 correctness model)
+ternary_dot           combinational K-wide multiply-free dot product (0 DSP)
+  ├─► ternary_gemv           row-streamed matrix-vector (y = W·x)
+  ├─► ternary_gemv_sparse    active-mask gather (fetch only active rows)
+  └─► ternary_gemv_packed ──► ternary_unpack5   (GEMV from dense base-3 weights)
+ternary_dot_pipe      3-stage pipelined dot (~280 MHz, streams 1 result/cycle)
+ternary_unpack5       dense base-3 byte → 5 ternary codes (1.6 bits/weight)
 ```
 
 - **`ternary_dot` (`rtl/ternary_dot.sv`)** — the literal core. For each lane,
@@ -52,6 +55,15 @@ ternary_dot          combinational K-wide multiply-free dot product
   verified + measured in `tb_ternary_gemv_sparse.py` (50% / 75% / 93.8% weight
   bytes saved at 50% / 25% / 6% density; see `bench/results/sparse_skip_sim.md`).
   On-silicon DDR3 gather is Phase 1.
+- **`ternary_dot_pipe` (`rtl/ternary_dot_pipe.sv`)** — the dot, but split into 3
+  registered stages so no path runs the whole adder tree: critical path 4 (vs ~14)
+  logic levels, **~280 MHz** (2.7×), still 0 DSP, 1 result/cycle (`valid`-tracked).
+- **`ternary_unpack5` (`rtl/ternary_unpack5.sv`)** — dense base-3 decoder: one byte
+  → 5 ternary lane codes (`3⁵=243<256` ⇒ **1.6 bits/weight**, the log₂3 optimum;
+  20% tighter than 2-bit codes). 36 LUTs, 0 DSP, exhaustively verified (all 243 bytes).
+- **`ternary_gemv_packed` (`rtl/ternary_gemv_packed.sv`)** — the first integration:
+  GEMV directly from dense base-3 packed rows (a `ternary_unpack5` array → `ternary_dot`),
+  the shape of the real decode datapath (burst → unpack → MAC). Bit-exact, 0 DSP.
 
 ## Where it's going (planned `rtl/`)
 
@@ -59,7 +71,7 @@ ternary_dot          combinational K-wide multiply-free dot product
 |---|---|---|
 | `ternary_pe_array` | `P` parallel dot lanes (bandwidth-matched, not FLOP-maxed) | 0 |
 | ~~`sparse_skip`~~ → **`ternary_gemv_sparse`** | active-mask gather: fetch only active rows (Direction D) | ✅ done (sim) |
-| `weight_unpacker` | DDR3 bytes → ternary codes (5 weights/byte, dense path) | 1 |
+| ~~`weight_unpacker`~~ → **`ternary_unpack5`** | dense base-3 bytes → ternary codes (1.6 bits/weight) | ✅ done (sim) |
 | `ddr3_stream` | MIG/LiteDRAM front-end + double-buffered tile feed | 1 |
 | `requant` / `rmsnorm` / `rope` / `softmax` | the few real-multiply ops → the 90 DSP48 (Vitis HLS) | 1 |
 | top `decode_core` | layer loop, KV in DDR3, UART/Eth token I/O | 1→2 |
@@ -79,7 +91,7 @@ DDR3 and stream (225 KB BRAM can't hold a model); sparsity shrinks that stream.
 
 Every block ships with a cocotb testbench (`sim/tb_<name>.py`) that asserts
 **bit-exact** equality against the NumPy golden — integer/ternary math, so exact,
-not tolerance. `sim/test_runner.py` builds + runs each via Verilator under pytest;
-`make -C sim` runs the suite locally / on worker4, and CI runs it on every PR.
+not tolerance. `make -C sim` builds + runs each DUT via Verilator (cocotb's
+per-DUT `Makefile.sim` flow) locally / on worker4, and CI runs the suite on every PR.
 A block is "done" only with: RTL + passing bit-exact test + Vivado utilization
 (DSP-free multiply path confirmed) + a logged measurement + a `BUILDLOG.md` entry.

@@ -10,6 +10,7 @@ Reproduce: `bash syn/run_synth.sh`. Target clock 4.0 ns (250 MHz); WNS → Fmax.
 | `ternary_gemv_sparse` (K=8, M=16) | 521 (2.5%) | 664 (1.6%) | **0 / 90** | 0 | 68 | ~116 MHz |
 | `ternary_dot_pipe` (K=8, 3-stage) | 149 (0.7%) | 129 (0.3%) | **0 / 90** | 0 | 14 | **~280 MHz** |
 | `ternary_unpack5` (byte→5 trits) | 36 (0.2%) | 0 | **0 / 90** | 0 | 0 | combinational |
+| `ternary_gemv_packed` (K=10, M=16) | 603 (2.9%) | 625 (1.5%) | **0 / 90** | 0 | 80 | ~104 MHz |
 
 **Headline: `DSP48 = 0` for every module.** Vivado confirms the ternary "multiply"
 is pure LUT sign-select + CARRY4 adder logic — the claim that frees all 90 DSP48

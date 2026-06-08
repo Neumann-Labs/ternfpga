@@ -22,9 +22,9 @@ COMMON := SIM=verilator TOPLEVEL_LANG=verilog EXTRA_ARGS=-Wno-fatal
 # tb_*.py (here) and the NumPy golden (../models) must be importable by the sim.
 export PYTHONPATH := $(TOPDIR):$(TOPDIR)/../models
 
-.PHONY: all dot gemv sparse pipe unpack clean
+.PHONY: all dot gemv sparse pipe unpack packed clean
 
-all: dot gemv sparse pipe unpack
+all: dot gemv sparse pipe unpack packed
 
 dot:
 > @echo "=== ternary_dot ==="
@@ -45,6 +45,10 @@ pipe:
 unpack:
 > @echo "=== ternary_unpack5 ==="
 > @$(MAKE) -f $(MKSIM) $(COMMON) TOPLEVEL=ternary_unpack5 MODULE=tb_ternary_unpack5 VERILOG_SOURCES="$(RTL)/ternary_unpack5.sv" SIM_BUILD=sim_build/ternary_unpack5 COCOTB_RESULTS_FILE=results_unpack.xml
+
+packed:
+> @echo "=== ternary_gemv_packed ==="
+> @$(MAKE) -f $(MKSIM) $(COMMON) TOPLEVEL=ternary_gemv_packed MODULE=tb_ternary_gemv_packed VERILOG_SOURCES="$(RTL)/ternary_dot.sv $(RTL)/ternary_unpack5.sv $(RTL)/ternary_gemv_packed.sv" SIM_BUILD=sim_build/ternary_gemv_packed COCOTB_RESULTS_FILE=results_packed.xml
 
 # Real BitNet ternary weights (needs models/data/real_tile.npz; committed fixture).
 real:
