@@ -202,3 +202,18 @@ The hardest part of the on-board datapath, done. Built a LiteX 2026.4 SoC for th
 **LiteX BIOS over UART:** VexRiscv @ 100 MHz, **SDRAM 256 MiB @ 800 MT/s, read leveling calibrated (m0/m1 b03), Memtest OK.** The MT41K128M16 DDR3 is functional on this board — the memory the ternary engine will stream weights from is silicon-proven. Captured in `bench/results/ddr3_onboard.md`.
 
 **Next:** integrate `ternary_tile` into the SoC as a CSR/DMA peripheral (stage a weight tile in DDR3 → stream the base-3 burst → read `y`) for a **measured on-board tokens/sec + J/token** — the last piece to put a real FPGA number into the head-to-head.
+
+### Phase 1 — on-board GEMV in a RISC-V SoC ✅ (the capstone)
+
+Integrated `ternary_tile` as a CPU-controlled CSR peripheral in a LiteX VexRiscv + LiteDRAM SoC (`soc/ternary_tile_csr.py`, `soc/ternary_arty.py`; K=8 so `x` is a clean 64-bit CSR), built + flashed it, and ran firmware (`soc/firmware/main.c`) that drives the engine from the CPU and checks the result:
+
+```
+Memtest OK
+Executing booted program at 0x40000000
+=== ternfpga on-board GEMV (K=8, M=16) ===
+TERNARY_ONBOARD_PASS  (16 rows bit-exact vs golden)
+```
+
+The full chain — CPU writes x → streams dense base-3 weight bytes → `weight_feed` → `ternary_unpack5` → pipelined multiply-free dot → y → CPU reads back — works **on silicon, in a real SoC, bit-exact**. The hardest integration risks (DDR3 calibration, CPU↔engine CSR interface) are retired. Captured in `bench/results/onboard_soc_gemv.md`; build/run in `soc/README.md`. Snags cleared: `BaseSoC` needs `integrated_rom_size`; the 80-bit x CSR (K=10) had no C accessor → K=8 for a clean 64-bit `ternary_x_write`; `litex_term` needs a pty (`script -qfc`).
+
+**Next (future, larger scope):** a DMA weight feed (vs CPU-streamed CSR writes) for LiteDRAM-roofline throughput, then the full transformer + decode loop on-board for a measured tokens/sec + J/token. The engine, its energy advantage (0-DSP, sub-watt), and the integrated on-board datapath are all proven now — what remains is scale, not feasibility.
