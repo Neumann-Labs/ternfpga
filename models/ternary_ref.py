@@ -45,3 +45,9 @@ def ternary_gemv_golden(W, x):
     assert W.size == 0 or set(np.unique(W)).issubset({-1, 0, 1}), "weights must be ternary"
     return (W @ x).tolist()
 
+
+def ternary_gemv_sparse_golden(W, x, mask):
+    """Activation-sparse GEMV: y[m] = dot(W[m], x) if mask[m] else 0 (inactive rows skipped)."""
+    full = ternary_gemv_golden(W, x)
+    return [full[m] if mask[m] else 0 for m in range(len(full))]
+

@@ -45,13 +45,20 @@ ternary_dot          combinational K-wide multiply-free dot product
 - **`ternary_gemv` (`rtl/ternary_gemv.sv`)** — streams an `M×K` weight matrix one
   row per cycle against a stationary activation vector. v0 uses a single dot
   lane (throughput is deliberately *not* the v0 goal — correctness is).
+- **`ternary_gemv_sparse` (`rtl/ternary_gemv_sparse.sv`)** — the gather engine
+  (Direction D). An FSM walks a per-row `active_mask` and issues a weight-memory
+  read **only for active rows**, computing their dot and leaving inactive rows
+  zero. The `rows_fetched` output proves weight traffic scales with density —
+  verified + measured in `tb_ternary_gemv_sparse.py` (50% / 75% / 93.8% weight
+  bytes saved at 50% / 25% / 6% density; see `bench/results/sparse_skip_sim.md`).
+  On-silicon DDR3 gather is Phase 1.
 
 ## Where it's going (planned `rtl/`)
 
 | Module | Role | Phase |
 |---|---|---|
 | `ternary_pe_array` | `P` parallel dot lanes (bandwidth-matched, not FLOP-maxed) | 0 |
-| `sparse_skip` | per-token active-neuron mask → gate lanes + suppress weight fetch (Direction D) | 0→1 |
+| ~~`sparse_skip`~~ → **`ternary_gemv_sparse`** | active-mask gather: fetch only active rows (Direction D) | ✅ done (sim) |
 | `weight_unpacker` | DDR3 bytes → ternary codes (5 weights/byte, dense path) | 1 |
 | `ddr3_stream` | MIG/LiteDRAM front-end + double-buffered tile feed | 1 |
 | `requant` / `rmsnorm` / `rope` / `softmax` | the few real-multiply ops → the 90 DSP48 (Vitis HLS) | 1 |
