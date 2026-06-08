@@ -1,0 +1,7 @@
+# Simulation / test dependencies (Phase 0+).
+# cocotb is pinned <2 because worker4 and CI both have Verilator 5.020, while
+# cocotb 2.0 requires Verilator >= 5.036. Fully fine for our needs; modernizing
+# the sim toolchain (Verilator 5.036+ / cocotb 2.0) is a tracked follow-up.
+cocotb<2
+numpy>=1.26
+pytest>=8
