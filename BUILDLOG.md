@@ -77,3 +77,17 @@ Stood up the CPU ternary-inference baseline; reproducible scripts in `bench/cpu_
 Energy via AMD RAPL (`/sys/class/powercap/intel-rapl:0` — no `perf` needed). Captured in `bench/results/cpu_baseline.md`. This anchors the energy axis: the FPGA target is ~0.25–0.4 J/tok (~10× better than this CPU), and the head-to-head GPU (3060, ~1–2 J/tok projected) is the one step that needs the NVIDIA driver — deferred.
 
 **Next (cycle 5):** push the RTL toward synthesis reality — run **Vivado synthesis** on `ternary_dot`, `ternary_gemv`, `ternary_gemv_sparse` to get real **LUT / DSP / BRAM utilization + Fmax** on the `xc7a35t`, confirming the **0-DSP multiply path** on actual silicon resources. Still no GPU.
+
+### Phase 0, cycle 5 — Vivado synthesis: 0 DSPs confirmed on silicon ✅
+
+Out-of-context Vivado 2025.2 synthesis of all three modules on the real part (`xc7a35ticsg324-1L`). Reproducible via `syn/run_synth.sh` + `syn/synth_one.tcl`.
+
+| module | LUTs | FFs | **DSP48** | BRAM | Fmax (synth est.) |
+|---|---|---|---|---|---|
+| `ternary_dot` | 233 (1.1%) | 0 | **0** | 0 | comb. |
+| `ternary_gemv` | 384 (1.9%) | 582 | **0** | 0 | ~104 MHz |
+| `ternary_gemv_sparse` | 521 (2.5%) | 664 | **0** | 0 | ~116 MHz |
+
+**`DSP48 = 0` on every module** — Vivado confirms the ternary multiply is pure LUT sign-select + CARRY4 adders, freeing all 90 DSPs. The central architectural claim is now *silicon-validated*, not asserted. Footprint is tiny (<2.5% LUTs). Fmax ~104–116 MHz is the **unpipelined v0** synth estimate (critical path = the K=8 adder tree, ~14 CARRY4 levels) — already in the dossiers' target range; pipelining + place-and-route are Phase 1. Captured in `bench/results/utilization.md`. (Also fixed a Tcl bug: `report_timing_summary` rejects `-delay_type` paired with `-setup`.)
+
+**Next (cycle 6):** the model/quantization pipeline — pull a small ternary model (the 0.7B `1bitLLM/bitnet_b1_58-large`, or distill toward ~300M), export its ternary weights to the packed format the RTL consumes (matching `models/ternary_ref.py`'s encoding), and add a sim test that runs a real model layer's weights through the gather engine. Still GPU-free.
