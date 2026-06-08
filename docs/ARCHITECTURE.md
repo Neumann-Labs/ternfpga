@@ -69,7 +69,7 @@ ternary_unpack5       dense base-3 byte → 5 ternary codes (1.6 bits/weight)
 
 | Module | Role | Phase |
 |---|---|---|
-| `ternary_pe_array` | `P` parallel dot lanes (bandwidth-matched, not FLOP-maxed) | 0 |
+| ✅ **`ternary_pe_array`** | `P` parallel dot lanes (bandwidth-matched, not FLOP-maxed) — P=4: 931 LUT, 0 DSP | ✅ done (sim) |
 | ~~`sparse_skip`~~ → **`ternary_gemv_sparse`** | active-mask gather: fetch only active rows (Direction D) | ✅ done (sim) |
 | ~~`weight_unpacker`~~ → **`ternary_unpack5`** | dense base-3 bytes → ternary codes (1.6 bits/weight) | ✅ done (sim) |
 | `ddr3_stream` | MIG/LiteDRAM front-end + double-buffered tile feed | 1 |

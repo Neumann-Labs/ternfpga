@@ -22,9 +22,9 @@ COMMON := SIM=verilator TOPLEVEL_LANG=verilog EXTRA_ARGS=-Wno-fatal
 # tb_*.py (here) and the NumPy golden (../models) must be importable by the sim.
 export PYTHONPATH := $(TOPDIR):$(TOPDIR)/../models
 
-.PHONY: all dot gemv sparse pipe unpack packed uart arty clean
+.PHONY: all dot gemv sparse pipe unpack packed pe uart arty clean
 
-all: dot gemv sparse pipe unpack packed uart arty
+all: dot gemv sparse pipe unpack packed pe uart arty
 
 dot:
 > @echo "=== ternary_dot ==="
@@ -49,6 +49,10 @@ unpack:
 packed:
 > @echo "=== ternary_gemv_packed ==="
 > @$(MAKE) -f $(MKSIM) $(COMMON) TOPLEVEL=ternary_gemv_packed MODULE=tb_ternary_gemv_packed VERILOG_SOURCES="$(RTL)/ternary_dot.sv $(RTL)/ternary_unpack5.sv $(RTL)/ternary_gemv_packed.sv" SIM_BUILD=sim_build/ternary_gemv_packed COCOTB_RESULTS_FILE=results_packed.xml
+
+pe:
+> @echo "=== ternary_pe_array ==="
+> @$(MAKE) -f $(MKSIM) $(COMMON) TOPLEVEL=ternary_pe_array MODULE=tb_ternary_pe_array VERILOG_SOURCES="$(RTL)/ternary_dot.sv $(RTL)/ternary_pe_array.sv" SIM_BUILD=sim_build/ternary_pe_array COCOTB_RESULTS_FILE=results_pe.xml
 
 uart:
 > @echo "=== uart_tx ==="

@@ -40,5 +40,6 @@ run ternary_gemv_sparse  "$RTL/ternary_dot.sv" "$RTL/ternary_gemv_sparse.sv"
 run ternary_dot_pipe     "$RTL/ternary_dot_pipe.sv"
 run ternary_unpack5      "$RTL/ternary_unpack5.sv"
 run ternary_gemv_packed  "$RTL/ternary_dot.sv" "$RTL/ternary_unpack5.sv" "$RTL/ternary_gemv_packed.sv"
+run ternary_pe_array     "$RTL/ternary_dot.sv" "$RTL/ternary_pe_array.sv"
 
 echo "DONE — full Vivado logs in $OUT/"

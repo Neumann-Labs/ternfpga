@@ -146,3 +146,11 @@ Vivado `report_power` (vectorless, post-route) on `arty_top` → **63 mW total o
 **The denominator of the thesis:** the xc7a35t chip draws ~0.06 W here — ~1900× under the 5950X's 121 W and ~2700× under a 3060's ~170 W. Even at the FPGA's far-lower throughput, a 3-orders-of-magnitude power gap is what makes ternary-on-FPGA win on energy/token. Honest: the demo's 1 mW dynamic is unrepresentative (it barely toggles); a busy engine lands ~0.2–0.5 W, still sub-watt. The accurate J/token needs a SAIF of the real engine + measured tokens/sec.
 
 **Phase 0 is essentially complete.** The ternary engine is designed, **bit-exact in sim** (7 testbenches), **0-DSP-confirmed in synthesis**, validated on **real BitNet weights**, **running on real silicon** (verified over UART), and **power-profiled**. What remains before the energy/token head-to-head is (a) the on-board inference datapath — DDR3/LiteX streaming, a large build — and (b) the **GPU baseline, which needs the RTX 3060**. That is: the autonomous build has reached the point where the next decisive measurement requires the GPU.
+
+### Phase 0+, cycle 12 — parallel PE array (the throughput knob) ✅
+
+(Resumed past the Phase-0 checkpoint — keep building GPU-free.) `rtl/ternary_pe_array.sv`: P parallel `ternary_dot` lanes computing P output rows/cycle against a shared activation vector. Test-first (`tb_ternary_pe_array.py`, 500 trials × P=4): **bit-exact, all lanes**. (The test also caught a golden-argument-order slip in my own tb — `ternary_dot_golden(activations, weights)`, not the reverse.)
+
+**Synthesis (xc7a35t, P=4): 931 LUTs (4.5%), 0 DSP, 208 CARRY4** — exactly 4× the single dot (233 LUTs): linear scaling, multiply-free. The 35T has LUT room for dozens of lanes, but the real ceiling is the DDR3 weight bandwidth (~0.6–0.8 GB/s), so P is sized to the roofline, not the LUT budget. Updated `bench/results/utilization.md`.
+
+**Next (cycle 13):** fold the 280 MHz `ternary_dot_pipe` into a streaming `valid`-tracked GEMV (parallel × pipelined), then wire toward the DDR3 tile feed — the Phase-1 datapath that yields a real on-board tokens/sec. Still GPU-free.
