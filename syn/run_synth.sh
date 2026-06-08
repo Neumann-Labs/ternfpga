@@ -44,5 +44,6 @@ run ternary_pe_array     "$RTL/ternary_dot.sv" "$RTL/ternary_pe_array.sv"
 run ternary_gemv_pipe    "$RTL/ternary_dot_pipe.sv" "$RTL/ternary_gemv_pipe.sv"
 run weight_feed          "$RTL/ternary_unpack5.sv" "$RTL/weight_feed.sv"
 run ternary_tile         "$RTL/ternary_dot_pipe.sv" "$RTL/ternary_gemv_pipe.sv" "$RTL/ternary_unpack5.sv" "$RTL/weight_feed.sv" "$RTL/ternary_tile.sv"
+run ternary_gemv_tiled   "$RTL/ternary_dot.sv" "$RTL/ternary_gemv_tiled.sv"
 
 echo "DONE — full Vivado logs in $OUT/"

@@ -22,9 +22,9 @@ COMMON := SIM=verilator TOPLEVEL_LANG=verilog EXTRA_ARGS=-Wno-fatal
 # tb_*.py (here) and the NumPy golden (../models) must be importable by the sim.
 export PYTHONPATH := $(TOPDIR):$(TOPDIR)/../models
 
-.PHONY: all dot gemv sparse pipe unpack packed pe gemvpipe feed tile uart arty clean
+.PHONY: all dot gemv sparse pipe unpack packed pe gemvpipe feed tile tiled uart arty clean
 
-all: dot gemv sparse pipe unpack packed pe gemvpipe feed tile uart arty
+all: dot gemv sparse pipe unpack packed pe gemvpipe feed tile tiled uart arty
 
 dot:
 > @echo "=== ternary_dot ==="
@@ -65,6 +65,10 @@ feed:
 tile:
 > @echo "=== ternary_tile (mem->engine) ==="
 > @$(MAKE) -f $(MKSIM) $(COMMON) TOPLEVEL=ternary_tile MODULE=tb_ternary_tile VERILOG_SOURCES="$(RTL)/ternary_dot_pipe.sv $(RTL)/ternary_gemv_pipe.sv $(RTL)/ternary_unpack5.sv $(RTL)/weight_feed.sv $(RTL)/ternary_tile.sv" SIM_BUILD=sim_build/ternary_tile COCOTB_RESULTS_FILE=results_tile.xml
+
+tiled:
+> @echo "=== ternary_gemv_tiled ==="
+> @$(MAKE) -f $(MKSIM) $(COMMON) TOPLEVEL=ternary_gemv_tiled MODULE=tb_ternary_gemv_tiled VERILOG_SOURCES="$(RTL)/ternary_dot.sv $(RTL)/ternary_gemv_tiled.sv" SIM_BUILD=sim_build/ternary_gemv_tiled COCOTB_RESULTS_FILE=results_tiled.xml
 
 uart:
 > @echo "=== uart_tx ==="
