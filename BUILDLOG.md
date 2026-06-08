@@ -91,3 +91,16 @@ Out-of-context Vivado 2025.2 synthesis of all three modules on the real part (`x
 **`DSP48 = 0` on every module** — Vivado confirms the ternary multiply is pure LUT sign-select + CARRY4 adders, freeing all 90 DSPs. The central architectural claim is now *silicon-validated*, not asserted. Footprint is tiny (<2.5% LUTs). Fmax ~104–116 MHz is the **unpipelined v0** synth estimate (critical path = the K=8 adder tree, ~14 CARRY4 levels) — already in the dossiers' target range; pipelining + place-and-route are Phase 1. Captured in `bench/results/utilization.md`. (Also fixed a Tcl bug: `report_timing_summary` rejects `-delay_type` paired with `-setup`.)
 
 **Next (cycle 6):** the model/quantization pipeline — pull a small ternary model (the 0.7B `1bitLLM/bitnet_b1_58-large`, or distill toward ~300M), export its ternary weights to the packed format the RTL consumes (matching `models/ternary_ref.py`'s encoding), and add a sim test that runs a real model layer's weights through the gather engine. Still GPU-free.
+
+### Phase 0, cycle 6 — model→RTL export pipeline + real-weight validation ✅
+
+Built the bridge from a trained BitNet model to the engine, and validated the RTL on REAL ternary weights (not just random):
+- `models/export_weights.py` — `ternarize_absmean` (BitNet b1.58 weight quant), pack/unpack to the 2-bit RTL encoding (shared with `ternary_ref.py` — one source of truth), `save_tile`/`load_tile`. Self-test passes.
+- `models/extract_bitnet_layer.py` — reads one weight tensor straight from safetensors (no model arch / `trust_remote_code`), ternarizes, slices a tile, saves `.npz`.
+- `sim/tb_gemv_from_file.py` + `make -C sim real` — runs an exported tile through `ternary_gemv`, bit-exact vs numpy.
+
+**Measured (1bitLLM/bitnet_b1_58-large, layer-0 `gate_proj`, 4096×1536):** absmean ternarization → **34.0% weight sparsity** (static zeros); the extracted 16×8 tile runs **bit-exact** through the engine. Committed `models/data/real_tile.npz` (682 B) as a test fixture so `make -C sim real` works from a clone.
+
+Honesty note: 34% is *static weight* sparsity; Direction D's bigger lever is *activation* sparsity (85–95%, dynamic per-token), a separate runtime quantity — both are exploitable by `ternary_gemv_sparse`'s gather. `models/README.md` documents the pipeline.
+
+**Next (cycle 7):** parallelize the engine — a `P`-lane `ternary_pe_array` (bandwidth-matched, the throughput step) and/or pipeline the K-wide adder tree to lift Fmax past the v0 ~104–116 MHz; then a weight-unpacker (5 ternary/byte dense packing) toward the DDR3 streaming path. Still GPU-free.

@@ -38,5 +38,10 @@ sparse:
 > @echo "=== ternary_gemv_sparse ==="
 > @$(MAKE) -f $(MKSIM) $(COMMON) TOPLEVEL=ternary_gemv_sparse MODULE=tb_ternary_gemv_sparse VERILOG_SOURCES="$(RTL)/ternary_dot.sv $(RTL)/ternary_gemv_sparse.sv" SIM_BUILD=sim_build/ternary_gemv_sparse COCOTB_RESULTS_FILE=results_sparse.xml
 
+# Real BitNet ternary weights (needs models/data/real_tile.npz; committed fixture).
+real:
+> @echo "=== ternary_gemv (real BitNet tile) ==="
+> @$(MAKE) -f $(MKSIM) $(COMMON) TOPLEVEL=ternary_gemv MODULE=tb_gemv_from_file VERILOG_SOURCES="$(RTL)/ternary_dot.sv $(RTL)/ternary_gemv.sv" SIM_BUILD=sim_build/ternary_gemv_real COCOTB_RESULTS_FILE=results_real.xml
+
 clean:
 > rm -rf sim_build results_*.xml __pycache__ .pytest_cache
