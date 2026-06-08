@@ -2,7 +2,9 @@
 // reporting over UART so the result is verifiable from the host.
 //
 // A runtime counter `c` (0..99) drives all 8 lanes of a ternary_dot whose
-// weights sum to +2 (w = 16'hAA55: five +1, three -1), so y = 2*c. Because `c`
+// weights sum to +2 (w = 16'hA955 = pack[+1,+1,+1,+1,+1,-1,-1,-1]), so y = 2*c.
+// (Build the constant with models pack_weights, not by hand — 0xAA55 sums to 0!)
+// Because `c`
 // is a runtime value, the dot is NOT constant-folded — the sign-select + adder
 // actually run in fabric. Each result is streamed as an ASCII line
 //   "TN" <c:2 hex> <y:4 hex> "\n"
@@ -11,7 +13,9 @@
 
 `default_nettype none
 
-module arty_top (
+module arty_top #(
+    parameter int unsigned CLKS_PER_BIT = 868   // 100 MHz / 115200 (override small for sim)
+) (
     input  wire       CLK100MHZ,
     output wire       uart_tx_o,
     output wire [3:0] led
@@ -25,7 +29,7 @@ module arty_top (
 
     // ---- Runtime input + multiply-free compute: y = dot({8{c}}, w) = 2*c ----
     reg [7:0] c = 8'd0;                       // 0..99, advanced per message
-    localparam [15:0] W_CONST = 16'hAA55;     // lanes: +1 +1 +1 +1 +1 -1 -1 -1 -> sum +2
+    localparam [15:0] W_CONST = 16'hA955;     // lanes: +1 +1 +1 +1 +1 -1 -1 -1 -> sum +2
     wire signed [31:0] y;
     ternary_dot #(.K(8)) u_dot (.a_flat({8{c}}), .w_flat(W_CONST), .dot(y));
     wire [15:0] y16 = y[15:0];
@@ -34,7 +38,7 @@ module arty_top (
     reg        u_start;
     reg  [7:0] u_data;
     wire       u_busy;
-    uart_tx #(.CLKS_PER_BIT(868)) u_uart (    // 100 MHz / 115200
+    uart_tx #(.CLKS_PER_BIT(CLKS_PER_BIT)) u_uart (
         .clk(clk), .rst_n(rst_n), .start(u_start), .data(u_data),
         .tx(uart_tx_o), .busy(u_busy)
     );

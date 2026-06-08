@@ -22,9 +22,9 @@ COMMON := SIM=verilator TOPLEVEL_LANG=verilog EXTRA_ARGS=-Wno-fatal
 # tb_*.py (here) and the NumPy golden (../models) must be importable by the sim.
 export PYTHONPATH := $(TOPDIR):$(TOPDIR)/../models
 
-.PHONY: all dot gemv sparse pipe unpack packed uart clean
+.PHONY: all dot gemv sparse pipe unpack packed uart arty clean
 
-all: dot gemv sparse pipe unpack packed uart
+all: dot gemv sparse pipe unpack packed uart arty
 
 dot:
 > @echo "=== ternary_dot ==="
@@ -55,6 +55,10 @@ uart:
 # NOTE: pass the -G parameter override via EXTRA_ARGS, not COMPILE_ARGS — the
 # latter would clobber cocotb's internal `--prefix Vtop` and break the build.
 > @$(MAKE) -f $(MKSIM) $(COMMON) TOPLEVEL=uart_tx MODULE=tb_uart_tx VERILOG_SOURCES="$(RTL)/uart_tx.sv" EXTRA_ARGS="-Wno-fatal -GCLKS_PER_BIT=8" SIM_BUILD=sim_build/uart_tx COCOTB_RESULTS_FILE=results_uart.xml
+
+arty:
+> @echo "=== arty_top (integration) ==="
+> @$(MAKE) -f $(MKSIM) $(COMMON) TOPLEVEL=arty_top MODULE=tb_arty_top VERILOG_SOURCES="$(RTL)/ternary_dot.sv $(RTL)/uart_tx.sv $(RTL)/arty_top.sv" EXTRA_ARGS="-Wno-fatal -GCLKS_PER_BIT=8" SIM_BUILD=sim_build/arty_top COCOTB_RESULTS_FILE=results_arty.xml
 
 # Real BitNet ternary weights (needs models/data/real_tile.npz; committed fixture).
 real:
