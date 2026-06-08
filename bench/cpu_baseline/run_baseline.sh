@@ -11,7 +11,7 @@
 set -euo pipefail
 
 ROOT="${BITNET_ROOT:-/srv/fpga/bitnet}"
-MODEL="${MODEL:-$ROOT/models/BitNet-b1.58-2B-4T/ggml-model-i2_s.gguf}"
+MODEL="${MODEL:-$ROOT/models/2B-4T-gguf/ggml-model-i2_s.gguf}"
 CLI="${CLI:-$ROOT/build/bin/llama-cli}"
 N="${N_TOKENS:-256}"
 THREADS="${THREADS:-16}"

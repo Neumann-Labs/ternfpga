@@ -61,3 +61,19 @@ Built `ternary_gemv_sparse` (`rtl/ternary_gemv_sparse.sv`): an FSM-driven gather
 `rows_fetched == active rows` exactly, output bit-exact. At the 85–95% activation sparsity of relu-fied/ProSparse FFNs (ProSparse Llama-2-7B = 89.3%), this fetches ~5–15% of dense weight bytes — the bandwidth reduction a GPU's dense / 2:4 MAC array cannot achieve for per-token *unstructured* sparsity. Captured in `bench/results/sparse_skip_sim.md`. Suite now: `dot` + `gemv` + `sparse`, all bit-exact.
 
 **Next (cycle 4):** stand up the **`bitnet.cpp` CPU baseline** on worker4 — build it, run a small ternary model, capture tokens/sec + CPU energy (RAPL). The first real cross-reference number, no GPU. Then begin the model/quantization pipeline (pick + relu-fy/distill the ~300M ternary target).
+
+### Phase 0, cycle 4 — first measured CPU baseline (bitnet.cpp) ✅
+
+Stood up the CPU ternary-inference baseline; reproducible scripts in `bench/cpu_baseline/`. Hit (and fixed + automated) two upstream issues on Ubuntu 24.04 / clang-18:
+1. `ggml-bitnet-mad.cpp:811` — `int8_t * y_col = y + ...` where `y` is `const`: a hard error under clang-18 (older clang/gcc only warn). Patched to `const int8_t *` (line 906 already was); `setup_bitnet.sh` applies the sed automatically.
+2. `setup_env.py`'s HF→GGUF converter rejects the 2B-4T architecture (`BitNetForCausalLM` "not supported"). Worked around by pulling Microsoft's official **pre-quantized i2_s GGUF** (`microsoft/bitnet-b1.58-2B-4T-gguf`, 1.19 GB) instead of converting.
+
+**Measured (BitNet b1.58 2B4T, i2_s, Ryzen 9 5950X, 16 threads, 256 tokens):**
+
+| throughput | energy/token | avg power |
+|---|---|---|
+| **28.4 tok/s** | **~4.62 J/tok** (RAPL package, full run) | ~121 W |
+
+Energy via AMD RAPL (`/sys/class/powercap/intel-rapl:0` — no `perf` needed). Captured in `bench/results/cpu_baseline.md`. This anchors the energy axis: the FPGA target is ~0.25–0.4 J/tok (~10× better than this CPU), and the head-to-head GPU (3060, ~1–2 J/tok projected) is the one step that needs the NVIDIA driver — deferred.
+
+**Next (cycle 5):** push the RTL toward synthesis reality — run **Vivado synthesis** on `ternary_dot`, `ternary_gemv`, `ternary_gemv_sparse` to get real **LUT / DSP / BRAM utilization + Fmax** on the `xc7a35t`, confirming the **0-DSP multiply path** on actual silicon resources. Still no GPU.
