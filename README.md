@@ -33,7 +33,7 @@ tools/    sync-to-worker4 + build/flash helpers
 ```
 
 ## Status
-🚧 **Phase 0** (de-risk the core in simulation). Build log: [`BUILDLOG.md`](BUILDLOG.md).
+🚧 **Phase 0** (de-risk the core in simulation). Verified bit-exact vs a NumPy golden in cocotb/Verilator so far: **`ternary_dot`** (multiply-free dot product, 0 DSP) and **`ternary_gemv`** (row-streamed matrix-vector). Build log: [`BUILDLOG.md`](BUILDLOG.md) · architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Hardware / toolchain
 Arty A7-35T (`xc7a35t`) on dev host `worker4` · Vivado 2025.2 + verilator + cocotb + openFPGALoader · RTX 3060 12 GB as the benchmark baseline.

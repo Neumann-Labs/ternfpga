@@ -36,3 +36,12 @@ def pack_weights(w) -> int:
     for i, x in enumerate(w):
         v |= weight_code(x) << (2 * i)
     return v
+
+
+def ternary_gemv_golden(W, x):
+    """Exact y[m] = sum_k W[m,k]*x[k] for ternary W (M x K) and int8 x (K). Returns list[int]."""
+    W = np.asarray(W, dtype=np.int64)
+    x = np.asarray(x, dtype=np.int64)
+    assert W.size == 0 or set(np.unique(W)).issubset({-1, 0, 1}), "weights must be ternary"
+    return (W @ x).tolist()
+
