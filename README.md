@@ -9,6 +9,10 @@ Batch-1 LLM *decode* is **memory-bandwidth-bound**: every token streams the whol
 
 So we build **one hand-authored ternary processing element** — `acc += (w=+1 ? a : w=−1 ? −a : 0)`, a single 6-LUT, **zero DSP multipliers** — and wrap it three ways on a single Xilinx **Arty A7-35T**, benchmarked head-to-head against an **RTX 3060** in the same machine.
 
+![Energy per token — CPU vs GPU vs FPGA target](bench/plots/energy_per_token.png)
+
+*Measured energy/token (BitNet-2B-4T, batch-1 decode): the RTX 3060 must dequantize ternary to bf16 and barely beats the CPU — the gap the FPGA exploits. [Data](bench/results/gpu_baseline.md) · [all figures](bench/plots/).*
+
 ## The three directions (one core)
 
 | Dir | What | Honest result vs RTX 3060 |

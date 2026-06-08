@@ -16,6 +16,8 @@ Budget: **20,800 LUTs, 41,600 FFs, 90 DSP48, ~225 KB BRAM.** Reproduce: `bash sy
 
 (`K`=lanes/cycle, `NT`=tiles/row, `KT=K·NT`=row width, `M`=output rows. Fmax≈1000/(10−WNS).)
 
+![Ternary GEMV fit on the 35T](../plots/fit_sweep.png)
+
 ## Findings
 
 **1. Zero DSP holds at every scale — even BitNet-2B FFN width.** The multiply-free
