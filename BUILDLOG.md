@@ -217,3 +217,29 @@ TERNARY_ONBOARD_PASS  (16 rows bit-exact vs golden)
 The full chain — CPU writes x → streams dense base-3 weight bytes → `weight_feed` → `ternary_unpack5` → pipelined multiply-free dot → y → CPU reads back — works **on silicon, in a real SoC, bit-exact**. The hardest integration risks (DDR3 calibration, CPU↔engine CSR interface) are retired. Captured in `bench/results/onboard_soc_gemv.md`; build/run in `soc/README.md`. Snags cleared: `BaseSoC` needs `integrated_rom_size`; the 80-bit x CSR (K=10) had no C accessor → K=8 for a clean 64-bit `ternary_x_write`; `litex_term` needs a pty (`script -qfc`).
 
 **Next (future, larger scope):** a DMA weight feed (vs CPU-streamed CSR writes) for LiteDRAM-roofline throughput, then the full transformer + decode loop on-board for a measured tokens/sec + J/token. The engine, its energy advantage (0-DSP, sub-watt), and the integrated on-board datapath are all proven now — what remains is scale, not feasibility.
+
+### Phase 2 — deep-research gate + de-risk (re-scope to one real block) ✅
+
+Before committing many sessions to "scale the engine," the user gated on a **deep-research pass**. A multi-agent sweep (23 primary sources, 114 claims, 25 adversarially verified [2-of-3 refute to kill], 22 confirmed — `docs/research/scaling-feasibility.md`) returned a decisive, partly humbling verdict:
+
+- **Our 0-DSP LUT ternary core is validated SOTA.** TeLLMe v2, TerEffic, and T-MAC all store ternary `{−1,0,+1}` products in LUTs (a DSP48's 25×18 multiplier is wasted on a pass/negate/zero select). We hand-built the field-standard datapath.
+- **Batch-1 decode is bandwidth-bound**, unanimously. Our ~0.7 GB/s DDR3 is ~20–25× slower than even a KV260; the high-throughput "weights-on-chip" regime (TerEffic's 16,300 tok/s on a U280 with 42 MB URAM) is categorically unavailable on a 35T (~225 KB BRAM, no URAM).
+- **A full BitNet 0.73B does not fit a 35T.** The closest SOTA datapoint — TeLLMe v2: a *full* ternary BitNet 0.73B at 25 tok/s / 4.8 W — runs on a ~$300 Zynq KV260, and its ternary core *alone* is ~23k LUTs > our entire 20.8k budget. The host-split it uses (CPU glue + FPGA matmul) **validates our VexRiscv design**.
+
+So we **re-scoped** (with the user, via an explicit decision): full-model-on-board → **one real-width transformer block**, streamed from DDR3, non-ternary glue (RMSNorm/RoPE/softmax/LM-head) on the VexRiscv host, headline = **energy/token vs the RTX 3060 on bit-exact numerics**. Nobody has built an LLM on an Artix-7-class board — that white space is the opportunity. Two de-risks followed, both done before writing block RTL:
+
+**(1) Tiled K-accumulation GEMV** (`rtl/ternary_gemv_tiled.sv`): accumulate each output row's dot over `NT` tiles of `K` lanes (row width `KT=K·NT`) through one `ternary_dot`, so a fixed lane handles real widths. **cocotb 25/25 bit-exact** (K=8 NT=4 KT=32 M=16), 0 DSP.
+
+**(2) P&R fit sweep** (`syn/fit_sweep.sh`, `bench/results/fit_sweep.md`): OOC synthesis from toy (KT=32) to BitNet-2B FFN width (KT=2048) on the 35T —
+
+| width KT | LUT | %LUT | FF | %FF | DSP |
+|--:|--:|--:|--:|--:|--:|
+| 32 | 565 | 2.7% | 865 | 2.1% | 0 |
+| 1024 | 10,234 | 49% | 24,675 | 59% | 0 |
+| 2048 | 11,013 | 53% | 32,961 | **79%** | **0** |
+
+**0 DSP holds to width 2048** — the multiply-free property proven at real scale. The wall isn't compute (K=16 lanes ≈ 1.6k LUTs); it's **register-resident operands** (flat `x_reg`+`y_mem` → 79% of FFs) and a **single-cycle flat-mux** that fails timing (63–83 MHz). Verdict: the scalable block must be **BRAM-centric and pipelined**, streaming operands sequentially. The tiled GEMV is a correctness stepping-stone, not the shippable microarchitecture.
+
+**(3) Activation sparsity, measured** (`models/measure_activation_sparsity.py`, `bench/results/activation_sparsity.md`): the sweep found **no** published figure for BitNet b1.58's FFN sparsity — Direction D's entire premise. So we measured it: hooked all 30 `down_proj` layers of BitNet-2B-4T over diverse text → **59.8% sparse** (42–79% by depth), **not** the assumed 85–95%. A real, GPU-unmatchable ~2.5× cut on `down_proj` traffic — honest, but smaller than hoped (85–95% needs relu-fication / ProSparse). The README's Direction-D claim was corrected to match the data. *(One-time analysis on the RTX 3060 — the HF BitNet loader's lazy import works in the gpu-venv but not the cpu-venv; the FPGA path stays GPU-free.)*
+
+**Next:** build the **BRAM-centric, pipelined FFN block** (gate/up/down + squared-ReLU), TDD against a PyTorch BitNet reference; then the ~60% activation-gather on `down_proj`; then on-board it for a measured energy/token. Feasibility is settled — the architecture is now driven by real silicon numbers, not guesses.
