@@ -58,6 +58,47 @@ def _unpack_row(packed: int, k: int):
     return out
 
 
+# ---- Dense base-3 packing: 5 ternary weights per byte (1.6 bits/weight) ----
+# 3**5 = 243 < 256, so five trits fit in a byte: byte = sum(t_i * 3**i), with
+# trit 0->0, 1->+1, 2->-1. 20% tighter than the 2-bit codes, 5x tighter than
+# INT8 — matches rtl/ternary_unpack5.sv exactly.
+
+def _w_to_trit(w: int) -> int:
+    return 0 if w == 0 else (1 if w == 1 else 2)
+
+
+def pack_trits5(w5) -> int:
+    """Pack up to 5 ternary weights into one base-3 byte (little-endian trits)."""
+    assert len(w5) <= 5, "at most 5 ternary weights per byte"
+    return sum(_w_to_trit(int(w)) * (3 ** i) for i, w in enumerate(w5))
+
+
+def unpack_trits5(byte: int, n: int = 5):
+    """Inverse of pack_trits5: byte -> list of n ternary weights {-1,0,+1}."""
+    b, out = int(byte), []
+    for _ in range(n):
+        t = b % 3
+        b //= 3
+        out.append(0 if t == 0 else (1 if t == 1 else -1))
+    return out
+
+
+def trit_codes5(byte: int) -> int:
+    """byte -> 10-bit value of 5 x 2-bit ternary codes (lane 0 in the LSBs),
+    matching rtl/ternary_unpack5.sv's codes_out output."""
+    codes = 0
+    for i, w in enumerate(unpack_trits5(byte)):
+        c = 0b01 if w == 1 else (0b10 if w == -1 else 0b00)
+        codes |= c << (2 * i)
+    return codes
+
+
+def pack_row_trits5(row) -> bytes:
+    """Pack a ternary row into ceil(len/5) base-3 bytes (the dense DDR3 layout)."""
+    row = [int(v) for v in row]
+    return bytes(pack_trits5(row[i:i + 5]) for i in range(0, len(row), 5))
+
+
 if __name__ == "__main__":
     rng = np.random.default_rng(0)
     W = rng.normal(size=(16, 8))
@@ -72,5 +113,11 @@ if __name__ == "__main__":
     av = pack_activations(a)
     assert [((av >> (8 * i)) & 0xFF) - 256 if ((av >> (8 * i)) & 0xFF) & 0x80 else ((av >> (8 * i)) & 0xFF)
             for i in range(8)] == a
+    # base-3 dense packing (5 trits/byte) — exhaustive round-trip over all 243 bytes
+    for byte in range(243):
+        w5 = unpack_trits5(byte)
+        assert pack_trits5(w5) == byte, f"trit round-trip failed at {byte}"
+        assert trit_codes5(byte) == pack_weights(w5), f"trit_codes5 != pack_weights at {byte}"
     print(f"export_weights self-test OK: ternary {{-1,0,1}}, pack/unpack exact, "
+          f"base-3 5-trit/byte round-trip exact (1.6 bits/weight), "
           f"absmean scale={scale:.4f}, sparsity={sparsity(Wq):.2f}")

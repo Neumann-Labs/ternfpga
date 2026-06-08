@@ -112,3 +112,11 @@ Honesty note: 34% is *static weight* sparsity; Direction D's bigger lever is *ac
 **Synthesis (xc7a35t):** critical path drops from ~14 → **4 logic levels**; WNS +0.424 ns @4 ns → **Fmax ~280 MHz** (2.7× the ~104 MHz combinational GEMV), at **149 LUTs / 129 FF / 0 DSP** (it even shrinks — registers break the tree into cheaper pieces). The latency cost is 3 cycles, irrelevant for a streaming engine. Updated `bench/results/utilization.md`.
 
 **Next (cycle 8):** fold the pipelined lane into the GEMV/gather datapath (a `valid`-tracked streaming GEMV at the higher clock), and/or build the **weight-unpacker** (dense 5-ternary/byte → 2-bit codes) that feeds it from a DDR3 burst — the first piece of the real memory path. Still GPU-free.
+
+### Phase 0, cycle 8 — dense base-3 weight packing: 1.6 bits/weight ✅
+
+`rtl/ternary_unpack5.sv` + `models/export_weights.py` (`pack_trits5` / `unpack_trits5` / `trit_codes5` / `pack_row_trits5`): the dense storage format. 3⁵ = 243 < 256 ⇒ **5 ternary weights per byte = 1.6 bits/weight** (the log₂3 = 1.585-bit optimum; 20% tighter than the 2-bit codes, 5× tighter than INT8). Since decode is DDR3-bandwidth-bound, that 20% is a direct cut in weight traffic. The combinational decoder turns one byte into the 5 lane codes the multiply-free dots consume — so a DDR3 burst feeds the lanes directly.
+
+Test-first, **exhaustive**: `tb_ternary_unpack5.py` checks all 243 bytes (RTL decode == Python golden, round-trip exact). **Synthesis (xc7a35t): 36 LUTs, 0 DSP, 0 CARRY** (Vivado folds the ÷3 / %3 chain into pure LUTs). Suite now: `dot` + `gemv` + `sparse` + `pipe` + `unpack`, all green.
+
+**Next (cycle 9):** assemble the **streaming GEMV** that ties it together — DDR3-burst → `ternary_unpack5` → pipelined dot lane → accumulate, `valid`-tracked end to end at the higher clock; the first module shaped like the real decode datapath. Still GPU-free (the on-board DDR3 bring-up via LiteX/MIG is the larger follow-on).
