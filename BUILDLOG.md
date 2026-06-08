@@ -194,3 +194,11 @@ User opened a worker4 maintenance window to set up the GPU. Installed `nvidia-dr
 **The thesis, measured:** the 3060 has no ternary datapath, so it dequantizes BitNet to bf16 (4.87 GB) and gets **3.67 J/tok — barely better than the CPU's native-ternary 4.62, and actually slower** (23.5 vs 28.4 tok/s). The GPU extracts almost no value from the 1.58-bit weights — the exact gap the FPGA exploits (0-DSP ternary, sub-watt). The GPU's best-foot dense run (Qwen-1.5B) is 1.82 J/tok — still ~5–7× over the FPGA target. Captured in `bench/results/gpu_baseline.md`.
 
 This closes the **baseline triad** (CPU + GPU measured, FPGA power-profiled + silicon-verified). The remaining work to a *measured* FPGA J/token is the Phase-1 on-board DDR3 inference datapath.
+
+### Phase 1 — DDR3 working on the board (LiteX/LiteDRAM) ✅
+
+The hardest part of the on-board datapath, done. Built a LiteX 2026.4 SoC for the Arty A7-35T (VexRiscv + **LiteDRAM** + BIOS): `syn/litex_arty.sh`. Build snags cleared: must run from a neutral dir (the `litex/` clone shadows the `litex` package), needs the `riscv64-unknown-elf` toolchain + `meson`/`ninja` for the BIOS. Bitstream met timing (WNS +0.209 ns); flashed via openFPGALoader.
+
+**LiteX BIOS over UART:** VexRiscv @ 100 MHz, **SDRAM 256 MiB @ 800 MT/s, read leveling calibrated (m0/m1 b03), Memtest OK.** The MT41K128M16 DDR3 is functional on this board — the memory the ternary engine will stream weights from is silicon-proven. Captured in `bench/results/ddr3_onboard.md`.
+
+**Next:** integrate `ternary_tile` into the SoC as a CSR/DMA peripheral (stage a weight tile in DDR3 → stream the base-3 burst → read `y`) for a **measured on-board tokens/sec + J/token** — the last piece to put a real FPGA number into the head-to-head.
