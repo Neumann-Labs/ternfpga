@@ -162,3 +162,11 @@ Vivado `report_power` (vectorless, post-route) on `arty_top` → **63 mW total o
 **Synthesis (xc7a35t): 351 LUTs, 742 FF, 0 DSP, ~280 MHz** — 2.7× the combinational GEMV's ~104 MHz, carrying the pipelining win through to the full matrix-vector. This is the high-clock streaming shape the on-board decode datapath will use. Updated `bench/results/utilization.md`.
 
 **Next (cycle 14):** the **weight-feed front-end** — a FIFO / double-buffer that turns a DDR3-style burst of dense base-3 bytes into the `w_row` stream (`ternary_unpack5` → `valid`), so the streaming GEMV can be fed from memory; the first concrete piece of the Phase-1 DDR3 datapath. Still GPU-free.
+
+### Phase 1, cycle 14 — weight-feed front-end (byte burst → row stream) ✅
+
+`rtl/weight_feed.sv`: accepts one dense base-3 weight byte/cycle (the DDR3 layout), accumulates BPR=ceil(K/5) bytes per row, unpacks via a `ternary_unpack5` array, and emits `{w_row, row_valid}` — exactly what `ternary_gemv` / `ternary_gemv_pipe` consume. Test-first (`tb_weight_feed.py`, 50 rows fed as a continuous byte stream, a monitor captures each row): **bit-exact** vs `pack_weights`.
+
+**Synthesis (xc7a35t): 75 LUTs, 18 FF, 0 DSP, ~777 MHz** — trivial and far above the engine clock, so the byte→row bridge is never the bottleneck. The memory side of the datapath now exists; the remaining gap to a full on-board GEMV-from-memory is wiring `weight_feed → ternary_gemv_pipe` and a DDR3 (LiteDRAM/MIG) source for the bytes.
+
+**Next (cycle 15):** integrate `weight_feed → ternary_gemv_pipe` into a single **`ternary_tile`** (GEMV directly from a base-3 byte burst, end to end in sim), then stand up **LiteX/LiteDRAM** DDR3 bring-up on the Arty to source real weight bursts — the heart of Phase 1. Still GPU-free.
