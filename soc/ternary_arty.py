@@ -24,7 +24,7 @@ def main():
     do_run = "--run" in sys.argv
 
     soc = BaseSoC(variant="a7-35", sys_clk_freq=100e6, integrated_rom_size=0x20000)
-    soc.submodules.ternary = TernaryTile(soc.platform, rtl, K=10, M=16)
+    soc.submodules.ternary = TernaryTile(soc.platform, rtl, K=8, M=16)
 
     builder = Builder(soc, output_dir=out, csr_csv=os.path.join(out, "csr.csv"))
     builder.build(build_name="ternary_arty", run=do_run)
