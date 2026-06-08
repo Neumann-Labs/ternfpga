@@ -1,0 +1,45 @@
+# Python / cocotb
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+results.xml
+sim_build/
+*.vcd
+*.fst
+
+# Verilator
+obj_dir/
+*.o
+*.d
+
+# Vivado / Xilinx build artifacts
+*.jou
+*.log
+*.str
+*.dcp
+*.bit
+*.bin
+*.ltx
+.Xil/
+vivado*.backup.*
+*.runs/
+*.cache/
+*.hw/
+*.ip_user_files/
+*.sim/
+.cxl*
+
+# Large binaries (rsync, don't commit)
+*.gguf
+*.safetensors
+*.onnx
+*.pt
+models/checkpoints/
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
