@@ -128,3 +128,13 @@ Test-first, **exhaustive**: `tb_ternary_unpack5.py` checks all 243 bytes (RTL de
 **Synthesis (xc7a35t): 603 LUTs, 625 FF, 0 DSP, ~104 MHz** (WNS −5.627 ns @4 ns; the unpack is nearly free — the critical path is still the combinational K-wide adder tree, so folding in `ternary_dot_pipe` is the Fmax follow-up). This is the first module shaped like the real decode datapath (memory burst → unpack → MAC). Suite: dot + gemv + sparse + pipe + unpack + packed, all green. Updated `bench/results/utilization.md`, `docs/ARCHITECTURE.md`.
 
 **Next (cycle 10):** the big one — start the **on-board path**: a minimal top (the ternary engine + a UART/GPIO readout) synthesized to a real bitstream and flashed to the Arty A7-35T, closing the author→synth→flash→observe loop on actual silicon. Still GPU-free; the "real hardware" milestone the repo has been building toward.
+
+### Phase 0, cycle 10 — RUNNING ON REAL SILICON ✅
+
+Closed the author→synth→flash→**observe** loop on the physical Arty A7-35T. `rtl/uart_tx.sv` (8N1 transmitter, sim bit-exact) + `rtl/arty_top.sv` (a `ternary_dot` of a runtime counter `c` against weights summing +2 → `y=2c`, streamed as ASCII `TN<c><y>` over the USB-UART + heartbeat LEDs). Plus `constraints/arty_a7_35.xdc`, `syn/build_bitstream.{tcl,sh}`, `syn/flash.sh` (openFPGALoader), `bench/verify_onboard.py`.
+
+**Result: 16/16 UART lines `y == 2*c`, read off the board over `/dev/ttyUSB1`.** The multiply-free ternary engine computes correctly in fabric. Build: 105 LUTs, **0 DSP**, 100 MHz met (WNS +1.924 ns). Captured in `bench/results/onboard.md`.
+
+The road there (honest, for the blog): UART sim-verified first. On-board, the result read `y=0` while `c` incremented correctly — a baud sweep proved the data was fine (132/133 lines decoded; the initial 0/0 was FT2232H settling), so the bug was logic. Wrote `tb_arty_top.py` (full integration sim) which **reproduced** `y=0`; probing internals showed the dot's inputs correct (`a_flat=0x0303…`, `w_flat=0xAA55`) but output 0. Root cause: **`0xAA55` packs `[+1×4,−1×4]` = sum 0**, not the intended +2; the correct constant is **`0xA955`**. Three unit tests passed but missed it — the integration test earned its keep. Fixed → rebuilt → reflashed → verified.
+
+**Next (cycle 11):** a Vivado **`report_power`** estimate for the engine (a GPU-free energy data point), and/or begin the on-board inference datapath (DDR3/LiteX) — the larger build toward the real energy/token head-to-head, whose GPU side is the step that finally needs the RTX 3060.
