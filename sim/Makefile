@@ -22,9 +22,9 @@ COMMON := SIM=verilator TOPLEVEL_LANG=verilog EXTRA_ARGS=-Wno-fatal
 # tb_*.py (here) and the NumPy golden (../models) must be importable by the sim.
 export PYTHONPATH := $(TOPDIR):$(TOPDIR)/../models
 
-.PHONY: all dot gemv sparse pipe unpack packed pe gemvpipe feed tile tiled stream ffn gather bench attn uart arty clean
+.PHONY: all dot gemv sparse pipe unpack packed pe gemvpipe feed tile tiled stream ffn gather bench attn ffnglue uart arty clean
 
-all: dot gemv sparse pipe unpack packed pe gemvpipe feed tile tiled stream ffn gather bench attn uart arty
+all: dot gemv sparse pipe unpack packed pe gemvpipe feed tile tiled stream ffn gather bench attn ffnglue uart arty
 
 dot:
 > @echo "=== ternary_dot ==="
@@ -89,6 +89,10 @@ bench:
 attn:
 > @echo "=== attention_unit (on-fabric attention) ==="
 > @$(MAKE) -f $(MKSIM) $(COMMON) TOPLEVEL=attention_unit MODULE=tb_attention_unit VERILOG_SOURCES="$(RTL)/attention_unit.sv" SIM_BUILD=sim_build/attention_unit COCOTB_RESULTS_FILE=results_attn.xml
+
+ffnglue:
+> @echo "=== ffn_glue_unit (on-fabric FFN glue: relu^2*up*w + int8 requant) ==="
+> @$(MAKE) -f $(MKSIM) $(COMMON) TOPLEVEL=ffn_glue_unit MODULE=tb_ffn_glue_unit VERILOG_SOURCES="$(RTL)/ffn_glue_unit.sv" SIM_BUILD=sim_build/ffn_glue_unit COCOTB_RESULTS_FILE=results_ffnglue.xml
 
 uart:
 > @echo "=== uart_tx ==="
