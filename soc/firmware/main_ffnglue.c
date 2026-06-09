@@ -29,11 +29,15 @@ int main(void)
 	ffng_f_count_write(TV_F);
 	printf("loaded; running...\n");
 
+	// `done` is a 1-cycle pulse the slow CPU poll can miss; instead wait for cycle_count to
+	// freeze (the FSM stops incrementing it on return to IDLE) — robust completion detection.
 	ffng_start_write(1);
-	unsigned spins = 0;
-	while ((ffng_status_read() & 1u) == 0u) { if (++spins > 20000000u) { printf("TIMEOUT\n"); break; } }
-
-	unsigned cyc = ffng_cyc_read();
+	unsigned cyc = 0, prev = 0xffffffffu, stable = 0;
+	for (unsigned i = 0; i < 4000000u; i++) {
+		cyc = ffng_cyc_read();
+		if (cyc != 0u && cyc == prev) { if (++stable > 200u) break; } else stable = 0;
+		prev = cyc;
+	}
 	uint32_t alo = ffng_amax_lo_read(), amid = ffng_amax_mid_read(), ahi = ffng_amax_hi_read();
 	int bad = 0;
 	for (int f = 0; f < TV_F; f++) {
