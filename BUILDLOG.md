@@ -607,3 +607,30 @@ hardened its largest *derived* term to *measured*. **The honest frontier:** the 
 decode loop (engine 27 + attention 18 + FFN-glue 20 BRAM = 65 > 50) does **not** fit a 35T at once —
 it needs F-tiling/BRAM-sharing or a bigger board (A7-100T ~$250 / KV260). Each accelerator + the SoC
 fits and is silicon-proven *individually*; the energy argument (cycle-count-based) holds regardless.
+
+---
+
+## Phase 9 — two accelerators co-resident + cooperating on silicon (the integrated capstone)
+
+**(x) engine + ffn_glue on one 35T (#52–#54).** The integrated capstone, scoped to its achievable
+core: instantiate **both** the ternary engine (`ternary_gemv_stream`) and the **full-width** FFN-glue
+unit (F_MAX=6912) in one SoC (`soc/coresident_arty.py`), and run them **cooperating** — the engine
+computes the gate/up ternary GEMVs, its int32 outputs feed `ffn_glue` (relu²·up·w + int8 requant),
+`h_q` read back. On the physical Arty:
+```
+engine gate/up GEMV: ok (0 row mismatches)
+COMBINED_ONBOARD_PASS  (engine -> ffn_glue, 32 h_q bit-exact, ffn-glue 214 cyc)
+```
+**Bit-exact end-to-end on real silicon** — the **first multi-accelerator computation on the board**
+(every prior on-silicon result measured one unit alone). Fit: 31% LUT / 12% FF / **45/50 BRAM** / 23
+DSP. The full-width FFN-glue + engine + SoC fit a 35T at 90% BRAM — concrete proof of the frontier:
+a *pair* fits (45), but +attention (~18) → 63 > 50, so the **full three-accelerator decode loop
+needs tiling or a bigger board**. WNS −1.713 ns @ 100 MHz (the standalone-unit margin; ran bit-exact
+at nominal). ([`coresident_onboard.md`](bench/results/coresident_onboard.md).)
+
+**The arc, complete.** Multiply-free ternary engine (silicon) → DDR3 roofline (Risk 1) →
+unstructured sparsity (Risk 2) → host glue measured (glue-bound) → on-fabric attention (flips to
+~1.8× under GPU, silicon) → on-fabric FFN glue (~2.3× under, silicon) → **the engine and an
+accelerator co-resident + cooperating on one $130 board, bit-exact.** What remains is breadth, not
+proof-of-concept: RMSNorm on-fabric (→ ~1.47 / 2.5× bound), the full 3-accelerator loop (tiling or a
+bigger board), live power, independent reproduction.
