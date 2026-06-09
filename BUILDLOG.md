@@ -268,5 +268,18 @@ reset can't infer as BRAM (Vivado tried to splay 262 144 bits into registers and
 `y_mem` write went into its own clock-only block, like `x_mem`. ([`gemv_stream.md`](bench/results/gemv_stream.md),
 before/after figure `bench/plots/bram_fix.png`.)
 
-**Next:** orchestrate gate/up/down over this GEMV + the on-chip ReLU²/elementwise/requant glue
-into the full FFN block, cocotb vs the `ffn_ref` integer intermediates.
+**(c) The glue simplifies — a useful identity.** Before building the inter-projection glue
+(ReLU² · elementwise · `ffn_sub_norm` · requant to int8), a derivation (`models/ffn_glue_ref.py`)
+showed the down_proj int8 input `h_q` depends ONLY on the **integer** `N_i = relu(gate_int_i)² ·
+up_int_i · w_i`: every per-token dequant scale **and** the RMSNorm normalizer **cancel** in the
+final absmax requant (`h_q = round(N · 127/max|N|)`). Verified vs the validated `ffn_ref`: float-w
+gives a **100.00% exact match (0 diff)**; **16-bit fixed-point** norm weights give **99.99% (≤1
+diff)**. So the "hard" float glue (dequant + RMSNorm sqrt-divide) mostly **vanishes on-chip** — the
+FPGA produces `h_q` with integer multiplies + one per-token reciprocal, and the host applies only
+the final per-token *output* scale. This justifies an **on-chip glue unit** that keeps the
+gate/up→down path entirely on-chip — avoiding the soft-VexRiscv round-trip the research flagged as
+the latency risk.
+
+**Next:** build the on-chip glue unit (relu²+elementwise via DSPs, two-pass absmax requant from a
+wide-N BRAM) bit-exact vs `ffn_glue_ref`, then the FFN controller sequencing gate→up→glue→down
+over `ternary_gemv_stream`.
