@@ -112,4 +112,14 @@ New glue/layer = norms 0.54M + RoPE 0.08M + on-fabric attention 0.33M + on-fabri
 **330M cyc → 3.30s → ~1.62 J/token → ~2.3× under the GPU**, closing on the **1.47 J/token engine
 bound**. The largest remaining glue is now the **2× RMSNorm** (0.54M) — a small norm/quant unit is
 the next (and last meaningful) step toward the bound. Engine + host-glue terms silicon-measured;
-attention silicon-measured (16456 cyc/query); FFN glue sim-/synth-backed.
+attention silicon-measured (16456 cyc/query); FFN glue **silicon-measured** (13974 cyc/layer, #50).
+
+**Phase 8 — FFN glue on silicon (#48–#50).** The FFN-glue unit was pipelined (8 stages, WNS
+−42.7 → −1.9 ns OOC), integrated as a LiteX peripheral, and run on the physical Arty:
+**FFNGLUE_ONBOARD_PASS** (6912 h_q + max|N| bit-exact), **MEASURED 13974 cyc/layer = 184× collapse**
+(the real F=6912 is more accurate than the sim's ~15.8K F=512×13.5 extrapolation — the fixed per-pass
+overhead amortizes). So the FFN glue now has the full PyTorch→sim→silicon chain, and **3 of the 4
+system cycle terms are silicon-measured** (engine, attention, FFN glue); only the 2× RMSNorm (0.54M)
+and the fully-integrated decode loop remain projected. The system J/token is unchanged at ~1.62
+(~2.3× under the GPU) — Phase 8 hardened its largest *derived* term to *measured*
+(`ffn_glue_onboard.md`).

@@ -575,3 +575,35 @@ RMSNorm** (0.54M) — a small norm/quant unit is the last meaningful step toward
 host glue (19.4M/layer), on-fabric attention (16456 cyc/query). *Sim-/synth-backed* — on-fabric FFN
 glue (15.6K cyc/layer, bit-exact, fits). *Derived* — system ~1.62 J/token (~2.3× under the GPU).
 *Still open* — RMSNorm on-fabric (→ ~1.47), full decode-loop SoC integration, live power, repro.
+
+---
+
+## Phase 8 — FFN glue on silicon (the largest derived term, now measured)
+
+**(v) Pipelining (#48).** The FFN-glue unit's single-cycle compute (relu→g²→×up→×w→×recip→add→shift)
+was WNS **−42.7 ns @ 100 MHz**. Pipelined into **8 stages** (one op/stage; per-stage valid + index +
+operands travel together), closed in three principled steps: −42.7 → −8.9 (pipelined) → −3.2
+(registered the requant scale Rsh/half, taking the msb priority encoder off the per-cycle path) →
+**−1.9 ns** (split the 122-bit add from the barrel shift) — matching the attention unit's −1.7 ns
+that ran bit-exact on silicon. Still bit-exact, same cycle count. 8% LUT / 2% FF / 40% BRAM / 19 DSP.
+
+**(w) On silicon (#49–#50).** Wrapped as a LiteX peripheral (`soc/ffn_glue_csr.py`, F_MAX=6912),
+built, flashed, run from firmware (`main_ffnglue.c`): load gate/up/w → `start` → read h_q + max|N| +
+cycle counter:
+```
+FFNGLUE_ONBOARD_PASS  (6912 h_q + max|N| bit-exact)
+MEASURED ffn-glue cycles/layer=13974 (F=6912) vs host 2.58M -> 184x
+```
+**Bit-exact on silicon**, **13974 cyc/layer** (the real F=6912 — more accurate than the sim's ~15.8K
+F=512 extrapolation, which double-counted the per-pass drain), **184× collapse**. Post-P&R WNS
+−1.615 ns @ 100 MHz, ran bit-exact at nominal (like attention). Firmware note: `done` is a 1-cycle
+pulse the slow CPU poll missed (cosmetic TIMEOUT, unit had completed) → poll `cycle_count`-freeze
+instead. ([`ffn_glue_onboard.md`](bench/results/ffn_glue_onboard.md).)
+
+**Status.** The FFN glue now has the PyTorch→sim→silicon chain. **3 of the 4 system cycle terms are
+silicon-measured** — engine, attention, FFN glue; only the 2× RMSNorm (0.54M) and the
+fully-integrated loop are projected. System J/token unchanged (~1.62, ~2.3× under the GPU) — Phase 8
+hardened its largest *derived* term to *measured*. **The honest frontier:** the *fully-integrated*
+decode loop (engine 27 + attention 18 + FFN-glue 20 BRAM = 65 > 50) does **not** fit a 35T at once —
+it needs F-tiling/BRAM-sharing or a bigger board (A7-100T ~$250 / KV260). Each accelerator + the SoC
+fits and is silicon-proven *individually*; the energy argument (cycle-count-based) holds regardless.
