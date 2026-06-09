@@ -327,7 +327,19 @@ the engine untouched (the gather is a feed/DMA concern). This is *per-token, uns
 a GPU's dense / 2:4 array can't exploit. ([`down_proj_gather.md`](bench/results/down_proj_gather.md),
 figure `bench/plots/gather_savings.png`.)
 
+**(g) Host-glue firmware in C — validated before it touches the FPGA.** The on-board FFN runs the
+glue between the gate/up and down GEMVs on the VexRiscv host. `soc/firmware/ffn_glue.h` implements
+it: per-token int8 activation quant, and the integer-only `h_q = round(N·127/max|N|)` with
+`N = relu(gate_int)²·up_int·w` (the dequant/RMSNorm-cancellation identity, so no float dequant /
+RMSNorm divide). The one subtlety — the exact `H = relu(gate)²·up` (up to ~2⁵⁵) is computed in
+`int64` then cast to `double`, which rounds *identically* to numpy's `object→float64`, so the
+ties-to-even requant is bit-exact. `soc/firmware/test_ffn_glue.c` (+ `gen_glue_testvec.py` from the
+golden) compiles on x86 and prints **`FFN_GLUE_C_PASS` — 200 channels bit-exact vs `ffn_glue_ref`**.
+The FFN-relevant host glue is done; the broader transformer glue (RMSNorm/RoPE/attention/LM-head)
+is full-transformer-block scope (beyond the re-scoped one-FFN-block target). *(Caveat: double math
+on a soft CPU is slow — the on-chip glue unit is the documented latency optimization.)*
+
 **Next:** the **DMA weight feed** (#24) — stream weight tiles from DDR3 into the engine at the
-bandwidth roofline (vs CPU CSR writes), implementing the hardware index-compaction + column gather
-this measurement isolates — then scale `KT`/`M` to real FFN width and run the full block from
-firmware for a **measured on-board energy/token**, the headline number.
+bandwidth roofline (vs CPU CSR writes), with a wider lane count so the engine reaches the
+bandwidth-bound regime — then run the full FFN from firmware (the validated C glue) for a
+**measured on-board energy/token**, the headline number.
