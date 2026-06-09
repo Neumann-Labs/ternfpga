@@ -21,7 +21,9 @@ EXP_N, EXP_LSB, QBITS, SHIFT = 4096, 0.01, 15, 24
 
 
 def exp_lut():
-    return np.round(np.exp(-np.arange(EXP_N) * EXP_LSB) * (1 << QBITS)).astype(np.int64)
+    # clip to 32767 so e fits signed-16 in hardware (exp(0)*2^15 = 32768 would read as -32768);
+    # matches soc/firmware/gen_glue_luts.py. Negligible (1 part in 32768).
+    return np.clip(np.round(np.exp(-np.arange(EXP_N) * EXP_LSB) * (1 << QBITS)), 0, 32767).astype(np.int64)
 
 
 def attn_unit_int(q_i, K_i, V_i, score_shift, EL):
@@ -34,8 +36,9 @@ def attn_unit_int(q_i, K_i, V_i, score_shift, EL):
     idx = np.clip((m - scores) >> score_shift, 0, EXP_N - 1).astype(np.int64)
     e = EL[idx]                                              # (T,) Q15
     s = int(e.sum())
-    num = (e[:, None] * V_i).sum(axis=0)                     # (D,) int64
-    return (num // max(s, 1)).astype(np.int64), scores, e, s
+    num = (e[:, None] * V_i).sum(axis=0)                     # (D,) int64 — raw weighted sum (RTL output)
+    ctx = (num // max(s, 1)).astype(np.int64)                # final /sum (trivial host step)
+    return ctx, scores, e, s, num.astype(np.int64)
 
 
 def _attn_float(q, K, V, scale):
@@ -67,7 +70,7 @@ if __name__ == "__main__":
     score_shift = int(round(np.log2(EXP_LSB * np.sqrt(D) / (qs * ks))))
 
     EL = exp_lut()
-    ctx_i, scores, e, s = attn_unit_int(q_i, K_i, V_i, score_shift, EL)
+    ctx_i, scores, e, s, num = attn_unit_int(q_i, K_i, V_i, score_shift, EL)
     ctx_int_real = ctx_i.astype(np.float64) * vs                 # dequant the output
     ctx_float = _attn_float(q, K, V, 1.0 / np.sqrt(D))
 

@@ -22,9 +22,9 @@ COMMON := SIM=verilator TOPLEVEL_LANG=verilog EXTRA_ARGS=-Wno-fatal
 # tb_*.py (here) and the NumPy golden (../models) must be importable by the sim.
 export PYTHONPATH := $(TOPDIR):$(TOPDIR)/../models
 
-.PHONY: all dot gemv sparse pipe unpack packed pe gemvpipe feed tile tiled stream ffn gather bench uart arty clean
+.PHONY: all dot gemv sparse pipe unpack packed pe gemvpipe feed tile tiled stream ffn gather bench attn uart arty clean
 
-all: dot gemv sparse pipe unpack packed pe gemvpipe feed tile tiled stream ffn gather bench uart arty
+all: dot gemv sparse pipe unpack packed pe gemvpipe feed tile tiled stream ffn gather bench attn uart arty
 
 dot:
 > @echo "=== ternary_dot ==="
@@ -85,6 +85,10 @@ gather:
 bench:
 > @echo "=== ternary_gemv_bench (on-silicon throughput harness) ==="
 > @$(MAKE) -f $(MKSIM) $(COMMON) TOPLEVEL=ternary_gemv_bench MODULE=tb_ternary_gemv_bench VERILOG_SOURCES="$(RTL)/ternary_dot_pipe.sv $(RTL)/ternary_gemv_stream.sv $(RTL)/ternary_gemv_bench.sv" SIM_BUILD=sim_build/ternary_gemv_bench COCOTB_RESULTS_FILE=results_bench.xml
+
+attn:
+> @echo "=== attention_unit (on-fabric attention) ==="
+> @$(MAKE) -f $(MKSIM) $(COMMON) TOPLEVEL=attention_unit MODULE=tb_attention_unit VERILOG_SOURCES="$(RTL)/attention_unit.sv" SIM_BUILD=sim_build/attention_unit COCOTB_RESULTS_FILE=results_attn.xml
 
 uart:
 > @echo "=== uart_tx ==="
