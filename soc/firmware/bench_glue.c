@@ -22,25 +22,23 @@
 #define MAXSEQ 128
 #define POS 64                 // representative decode position (attends to a 65-deep cache)
 
-static int32_t q_int[HID], k_int[NKV * HD], v_int[NKV * HD];
-static int32_t gate_int[INTER], up_int[INTER];
-static double norm_w[HID], ffn_w[INTER];
-static float kcache[NKV * MAXSEQ * HD], vcache[NKV * MAXSEQ * HD];
-static float o_normed[HID], scratch[NH * HD + MAXSEQ], xbuf[HID];
-static int8_t o_q[HID], hq[INTER];
+// The KV cache + working buffers (~0.8 MB) far exceed the small on-chip sram that .bss
+// uses, so bump-allocate them from a high DDR3 address (main_ram is 256 MB; the program
+// loads at the low end). Self-contained — no linker/build changes.
+#define DRAM_SCRATCH 0x46000000UL
+static uint8_t *g_bump = (uint8_t *)DRAM_SCRATCH;
+static void *dalloc(unsigned n) { void *p = g_bump; g_bump += (n + 15u) & ~15u; return p; }
 
-static inline void timer_start(void)
-{
-	timer0_en_write(0);
-	timer0_reload_write(0xffffffff);
-	timer0_load_write(0xffffffff);
-	timer0_en_write(1);
-}
+static int32_t *q_int, *k_int, *v_int, *gate_int, *up_int;
+static double *norm_w, *ffn_w;
+static float *kcache, *vcache, *o_normed, *scratch, *xbuf;
+static int8_t *o_q, *hq;
 
-static inline uint32_t timer_now(void)
+static inline uint32_t timer_now(void)     // RISC-V cycle counter (counts up), no setup
 {
-	timer0_update_value_write(1);
-	return timer0_value_read();             // down-counter: elapsed = start - end
+	uint32_t c;
+	__asm__ volatile ("rdcycle %0" : "=r"(c));
+	return c;
 }
 
 static void rms_norm_f(float *x, const double *w, int n, double eps)
@@ -54,9 +52,23 @@ static void rms_norm_f(float *x, const double *w, int n, double eps)
 int main(void)
 {
 	uart_init();
-	timer_start();
-	printf("\n=== ternfpga glue-cycle bench (hidden=%d inter=%d pos=%d @100MHz) ===\n",
+	printf("\n=== ternfpga glue-cycle bench  hid=%d inter=%d pos=%d @100MHz ===\n",
 	       HID, INTER, POS);
+
+	q_int = dalloc(sizeof(int32_t) * HID);
+	k_int = dalloc(sizeof(int32_t) * NKV * HD);
+	v_int = dalloc(sizeof(int32_t) * NKV * HD);
+	gate_int = dalloc(sizeof(int32_t) * INTER);
+	up_int = dalloc(sizeof(int32_t) * INTER);
+	norm_w = dalloc(sizeof(double) * HID);
+	ffn_w = dalloc(sizeof(double) * INTER);
+	kcache = dalloc(sizeof(float) * NKV * MAXSEQ * HD);
+	vcache = dalloc(sizeof(float) * NKV * MAXSEQ * HD);
+	o_normed = dalloc(sizeof(float) * HID);
+	scratch = dalloc(sizeof(float) * (NH * HD + MAXSEQ));
+	xbuf = dalloc(sizeof(float) * HID);
+	o_q = dalloc(HID);
+	hq = dalloc(INTER);
 
 	for (int i = 0; i < HID; i++) {
 		q_int[i] = (i * 37 % 251) - 125; norm_w[i] = 0.9 + 0.001 * (i % 50);
@@ -75,24 +87,25 @@ int main(void)
 		.max_seq = MAXSEQ, .theta = 500000.0, .eps = 1e-5,
 		.sq = 1.2, .sk = 1.8, .sv = 2.3, .so = 0.96, .norm_w = norm_w };
 
+	printf("setup ok (buffers in DRAM)\n");
+
 	uint32_t t0, t1;
 	t0 = timer_now(); rms_norm_f(xbuf, norm_w, HID, 1e-5);                 t1 = timer_now();
-	uint32_t c_norm = t0 - t1;
+	uint32_t c_norm = t1 - t0;  printf("norm=%u\n", c_norm);
 	t0 = timer_now(); double ax = attn_act_quant_int8(xbuf, HID, o_q);     t1 = timer_now();
-	uint32_t c_quant = t0 - t1;
+	uint32_t c_quant = t1 - t0; printf("quant=%u\n", c_quant);
 	t0 = timer_now();
 	attn_decode_step(&c, POS, q_int, k_int, v_int, ax, kcache, vcache, o_normed, o_q, scratch);
 	t1 = timer_now();
-	uint32_t c_attn = t0 - t1;
+	uint32_t c_attn = t1 - t0;  printf("attn=%u\n", c_attn);
 	double sh;
 	t0 = timer_now(); ffn_glue_hq(gate_int, up_int, ffn_w, INTER, hq, &sh); t1 = timer_now();
-	uint32_t c_ffn = t0 - t1;
+	uint32_t c_ffn = t1 - t0;   printf("ffn=%u\n", c_ffn);
 
 	// per-layer glue: 2x RMSNorm + 2x input-quant (attn + ffn) + attn decode step + ffn glue
 	uint32_t glue = 2u * c_norm + 2u * c_quant + c_attn + c_ffn;
-	printf("GLUE_CYC  norm=%u quant=%u attn=%u ffn=%u  per_layer=%u\n",
-	       c_norm, c_quant, c_attn, c_ffn, glue);
-	printf("CHK o_q[3]=%d hq[7]=%d sumHsq=%g amax=%g\n", (int)o_q[3], (int)hq[7], sh, ax);
+	printf("GLUE_CYC norm=%u quant=%u attn=%u ffn=%u per_layer=%u chk=%d,%d\n",
+	       c_norm, c_quant, c_attn, c_ffn, glue, (int)o_q[3], (int)hq[7]);
 
 	while (1) { }
 	return 0;
