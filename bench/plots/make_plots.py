@@ -118,9 +118,37 @@ def bandwidth_roofline():
     _save(fig, "bandwidth_roofline.png")
 
 
+def bram_fix():
+    """Source: fit_sweep.md (register-resident tiled @ width 2048) + gemv_stream.md (BRAM stream)."""
+    metrics = ["LUT %", "FF %"]
+    tiled = [52.9, 79.2]
+    stream = [2.3, 0.9]
+    x = np.arange(len(metrics))
+    w = 0.36
+    fig, ax = plt.subplots(figsize=(7.4, 4.3))
+    b1 = ax.bar(x - w / 2, tiled, w, label="register-resident (flat NT:1 mux)", color=GREY)
+    b2 = ax.bar(x + w / 2, stream, w, label="BRAM-centric (sequential stream)", color=GREEN)
+    for bars in (b1, b2):
+        for b in bars:
+            ax.text(b.get_x() + b.get_width() / 2, b.get_height() + 1.2, f"{b.get_height():.1f}",
+                    ha="center", va="bottom", fontsize=8, fontweight="bold")
+    ax.set_ylabel("% of Arty A7-35T budget")
+    ax.set_xticks(x)
+    ax.set_xticklabels(metrics)
+    ax.set_title("The fit-sweep fix: register-resident → BRAM-centric ternary GEMV")
+    ax.legend(fontsize=8, loc="upper center")
+    ax.set_ylim(0, 95)
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.text(0.5, 44, "timing @ 100 MHz, both 0 DSP:\nflat mux   −5.9 ns  FAIL  (~63 MHz)\n"
+            "BRAM       +3.5 ns  PASS  (~154 MHz)", fontsize=8, color=NAVY, ha="center",
+            bbox=dict(boxstyle="round", fc="white", ec=GREY))
+    _save(fig, "bram_fix.png")
+
+
 if __name__ == "__main__":
     energy_per_token()
     activation_sparsity()
     fit_sweep()
     bandwidth_roofline()
-    print("done — 4 figures in", OUT)
+    bram_fix()
+    print("done — 5 figures in", OUT)

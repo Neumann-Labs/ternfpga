@@ -243,3 +243,30 @@ So we **re-scoped** (with the user, via an explicit decision): full-model-on-boa
 **(3) Activation sparsity, measured** (`models/measure_activation_sparsity.py`, `bench/results/activation_sparsity.md`): the sweep found **no** published figure for BitNet b1.58's FFN sparsity — Direction D's entire premise. So we measured it: hooked all 30 `down_proj` layers of BitNet-2B-4T over diverse text → **59.8% sparse** (42–79% by depth), **not** the assumed 85–95%. A real, GPU-unmatchable ~2.5× cut on `down_proj` traffic — honest, but smaller than hoped (85–95% needs relu-fication / ProSparse). The README's Direction-D claim was corrected to match the data. *(One-time analysis on the RTX 3060 — the HF BitNet loader's lazy import works in the gpu-venv but not the cpu-venv; the FPGA path stays GPU-free.)*
 
 **Next:** build the **BRAM-centric, pipelined FFN block** (gate/up/down + squared-ReLU), TDD against a PyTorch BitNet reference; then the ~60% activation-gather on `down_proj`; then on-board it for a measured energy/token. Feasibility is settled — the architecture is now driven by real silicon numbers, not guesses.
+
+### Phase 2 — FFN block build (TDD, in progress)
+
+**(a) The FFN golden, validated bit-exact vs PyTorch.** Before any RTL, pinned the *exact*
+BitNet-2B-4T FFN arithmetic by probing the real model (`models/inspect_bitnet_ffn.py`):
+`MLP(x) = down_proj( ffn_sub_norm( ReLU(gate(x))² · up(x) ) )`, each proj an `AutoBitLinear`
+(per-token int8 absmax quant → int32 ternary matmul → dequant by `weight_scale / scale_x`). The
+`ffn_sub_norm` RMSNorm before `down_proj` preserves zeros, so the 60% sparsity figure stands.
+`models/ffn_ref.py` implements it in NumPy and exposes the int8 inputs + int32 outputs — the FPGA
+boundary. `models/validate_ffn.py` checks it against the real PyTorch FFN on captured layer-0
+activations + extracted ternary weights: **cosine 1.000000, mean abs err 9e-6, PASS**. The spec is
+locked (and the golden's integer path is actually *more* exact than the model's fp matmul).
+
+**(b) The BRAM-centric streaming GEMV — the fit-sweep fix, on silicon-grade numbers.**
+`rtl/ternary_gemv_stream.sv`: activation in a BRAM read by a **sequential address** (no NT:1 mux),
+the K-wide dot is the **pipelined** lane, partials accumulate NT-at-a-time into a y BRAM. cocotb
+bit-exact over 6 configs (incl. odd + single-tile widths). Synthesis (`xc7a35t`, 100 MHz):
+**479 LUT (2.3%), 364 FF (0.9%), 0 DSP, 10 BRAM (20%), WNS +3.5 ns (Fmax ≈ 154 MHz)** — where the
+register-resident flat-mux `tiled` was 53% LUT / 79% FF and **failed timing by −5.9 ns**. Operands
+moved from flip-flops to BRAM → ~20×/90× LUT/FF collapse *and* timing met, resources now
+width-independent (KT/M up to 8192). Snag cleared: a RAM written inside an `always_ff` with async
+reset can't infer as BRAM (Vivado tried to splay 262 144 bits into registers and errored) — the
+`y_mem` write went into its own clock-only block, like `x_mem`. ([`gemv_stream.md`](bench/results/gemv_stream.md),
+before/after figure `bench/plots/bram_fix.png`.)
+
+**Next:** orchestrate gate/up/down over this GEMV + the on-chip ReLU²/elementwise/requant glue
+into the full FFN block, cocotb vs the `ffn_ref` integer intermediates.
