@@ -242,22 +242,26 @@ def ddr3_roofline():
 
 
 def full_model_energy():
-    """Source: full_model_projection.md — measured engine rate x BitNet-2B dims vs RTX 3060."""
-    labels = ["RTX 3060\n(measured)", "FPGA engine\n(measured rate)", "FPGA engine\n+ gather"]
-    vals = [3.67, 1.47, 1.28]
-    colors = [STEEL, GREEN, GREEN]
-    fig, ax = plt.subplots(figsize=(7.0, 4.3))
+    """Source: glue_measured.md — fully-measured (engine + glue) vs engine-only vs RTX 3060."""
+    labels = ["FPGA full system\n(host-split, MEASURED)", "RTX 3060\n(measured)",
+              "FPGA engine only\n(measured rate)"]
+    vals = [4.32, 3.67, 1.47]
+    colors = [ORANGE, STEEL, GREEN]
+    fig, ax = plt.subplots(figsize=(7.6, 4.5))
     bars = ax.bar(labels, vals, color=colors, width=0.6)
     for b, v in zip(bars, vals):
-        ax.text(b.get_x() + b.get_width() / 2, v + 0.06, f"{v:.2f}", ha="center", va="bottom",
+        ax.text(b.get_x() + b.get_width() / 2, v + 0.07, f"{v:.2f}", ha="center", va="bottom",
                 fontsize=9, fontweight="bold")
+    ax.axhline(3.67, color=STEEL, lw=1.0, ls=":")
     ax.set_ylabel("J / token (BitNet-2B, lower is better)")
-    ax.set_title("Full-model energy/token — measured engine rate × real dims")
-    ax.set_ylim(0, 4.2)
+    ax.set_title("Fully-measured energy/token — engine wins, host-glue erases it")
+    ax.set_ylim(0, 5.0)
     ax.spines[["top", "right"]].set_visible(False)
-    ax.annotate("~2.5× better\n(engine compute, K=8;\nglue = open variable)", xy=(1, 1.47),
-                xytext=(1.4, 2.7), fontsize=8, color=NAVY,
-                arrowprops=dict(arrowstyle="->", color=NAVY))
+    ax.annotate("the 0-DSP engine is ~2.5× better...", xy=(2, 1.47), xytext=(0.9, 2.3),
+                fontsize=8, color=GREEN, arrowprops=dict(arrowstyle="->", color=GREEN))
+    ax.annotate("...but host-side attention (DRAM-bound)\nmakes the system glue-bound.\n"
+                "Fix: attention on the fabric.", xy=(0, 4.32), xytext=(0.05, 4.45),
+                fontsize=8, color=NAVY)
     _save(fig, "full_model_energy.png")
 
 

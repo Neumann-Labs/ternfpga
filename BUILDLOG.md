@@ -456,3 +456,34 @@ datapath is validated end-to-end (attention cosine 1.0 → glue `ATTN_GLUE_C_PAS
 cosine 1.0), and the full-model energy/token (~1.47 J/tok engine, **~2.5× under the RTX 3060**) is
 composed from on-silicon primitives. Parked, scoped: a fully-measured end-to-end J/token (needs
 cheap fixed-point glue + the firmware wall), live power, independent reproduction.
+
+---
+
+## Phase 4 — fixed-point glue + the FULLY-MEASURED J/token (glue-bound verdict)
+
+**(n) The firmware wall was a missing `irq_setie`.** Phase 3 blamed float/libm/timer for the
+glue-timing firmware halting ~6 chars into UART. It was none of those: LiteX's `uart_write` is
+**IRQ-driven**, so without `irq_setmask(0); irq_setie(1)` the TX ring stalls after ~8 chars
+(`main_dmabw`/`main_bench` had the block; the bench firmwares dropped it). A humbling root cause —
+the right move would have been a trap/IO check before the soft-float rabbit hole.
+
+**(o) Fixed-point glue + measured glue cycles (#34–#36).** The only glue transcendentals (RoPE
+cos/sin, softmax exp) become **Q15 LUTs**; norms/FFN use the integer-cancellation trick. The
+NumPy golden (`models/glue_fixed_ref.py`) validates the no-libm approach at **cosine 0.999999**.
+The **pure-integer** bench (`soc/firmware/bench_glue_int.c` + `gen_glue_luts.py`, no float/libm)
+then runs on silicon and times one BitNet-2B layer of glue:
+```
+norm_x2=544857  rope=80425  attn(scores+softmax+a·V)=16213542  ffn=2583703
+GLUE_INT_PER_LAYER = 19.42 M cycles
+```
+
+**(p) Fully-measured J/token — and the honest verdict: GLUE-BOUND (#37).** Both cycle terms now
+measured on silicon: layer = engine 8.68 M + glue 19.42 M = **28.1 M cyc** → 30 layers + LM-head =
+**884 M cyc/token → 8.84 s → ~4.32 J/token**. So the **engine** is ~2.5× under the GPU (1.47 J/tok)
+but the **naive host-split system is ~1.2× WORSE** (4.32 vs 3.67) — the glue is **2.2× the engine**
+and **83% of it is attention** (scores/softmax/a·V, DRAM-latency-bound on the cacheless VexRiscv).
+The architecture lesson is decisive and matches the SOTA: **attention must live on the fabric** (KV
+in BRAM), which removes the 16.2 M-cycle term and makes the system engine-bound (→ the ~1.47 J/tok
+engine win). ([`glue_measured.md`](bench/results/glue_measured.md), figure `full_model_energy.png`.)
+The cycle path is now **fully measured** (only power is Vivado-estimated). Still open: an on-fabric
+attention/glue unit, live power, independent reproduction, the wider-K / DMA-fed decode loop.

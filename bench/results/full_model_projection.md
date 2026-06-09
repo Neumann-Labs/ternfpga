@@ -1,5 +1,10 @@
 # Full-model energy/token — projection from measured primitives
 
+> **UPDATE (Phase 4):** the host-glue is now **measured** on silicon, not projected — see
+> [`glue_measured.md`](glue_measured.md). The fully-measured system is ~4.32 J/token and
+> **glue-bound** (host-side attention dominates); the ~1.47 J/token below is the engine-compute
+> term (what on-fabric glue would realize). This doc remains valid as the engine-compute analysis.
+
 Phase-3 #30–#32. The two on-silicon primitives are **measured**; the full-model number is
 **composed** from them + the real BitNet-2B dimensions. What is measured vs projected vs
 unmeasured is labelled explicitly — this is not a fully end-to-end measured J/token (the
