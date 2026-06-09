@@ -487,3 +487,34 @@ in BRAM), which removes the 16.2 M-cycle term and makes the system engine-bound 
 engine win). ([`glue_measured.md`](bench/results/glue_measured.md), figure `full_model_energy.png`.)
 The cycle path is now **fully measured** (only power is Vivado-estimated). Still open: an on-fabric
 attention/glue unit, live power, independent reproduction, the wider-K / DMA-fed decode loop.
+
+---
+
+## Phase 5 — on-fabric attention: the system flips engine-dominant
+
+**(q) attention_unit.sv (#38–#40).** The integer attention spec (`models/attn_unit_ref.py`,
+cosine 0.999338) revealed a clean RTL-friendly form: the softmax temperature is a **programmable
+right-shift** into a Q15 exp LUT (no multiply). `rtl/attention_unit.sv` — one query vs a
+BRAM-resident KV cache, scores (int16 MAC) → shift+LUT softmax → a·V, outputting num[d]+sum_e
+(divider-free) — is **bit-exact** vs the oracle (`ATTENTION_UNIT_PASS`, `make -C sim attn`) at
+**~1 MAC/cycle**: 8232 cyc/query @ T=32 → ~165K cyc/layer vs the measured **16.2M** host attention
+= **~98× collapse**. Synthesis: **24% LUT / 4 DSP / 18.5 BRAM**, Fmax ~86 MHz (one pipeline reg
+closes 100 MHz; immaterial — attention is ~1.6% of the layer). Two bugs caught: exp LUT[0]=32768
+overflowed signed-16 (clip to 32767); kmem/vmem read in an async-reset block forced LUTRAM (90%
+LUTs) → moved reads to a clock-only block + `ram_style="block"` → BRAM, LUTs to 24%.
+([`attention_unit_syn.md`](bench/results/attention_unit_syn.md).)
+
+**(r) System recompute — verdict flips (#41).** Replacing the 16.2M host attention with the
+on-fabric ~0.33M: glue/layer 19.4M → **3.5M**, layer 28.1M → **12.2M**, token → **~407M cyc →
+~2.0 J/token**. The system goes from **glue-bound (4.32 J/tok, 1.2× WORSE than the 3060)** to
+**ENGINE-DOMINANT (~1.99 J/tok, ~1.8× BETTER)** — engine is now 71% of the layer, and the 0-DSP
+ternary engine's energy win is **realized at the system level**. The largest remaining glue is the
+FFN glue (2.58M, DRAM-bound on host); moving *it* on-fabric next → the ~1.47 J/tok engine bound
+(~2.5×). Engine + glue cycle terms are silicon-measured; the attention unit is sim-/synth-backed
+(on-board SoC integration with a tuned T_MAX is the remaining step). Figure `full_model_energy.png`.
+
+**The full picture:** measured ternary engine (1 cyc/tile, 2.5× engine-level) → measured DDR3
+roofline (Risk-1 survives) → measured unstructured sparsity (Risk-2 holds) → measured host glue
+(glue-bound) → **on-fabric attention (bit-exact, synth-fit) flips the system to ~1.8× under the
+GPU.** A multiply-free ternary LLM engine on a $130 board whose system-level energy/token beats an
+RTX 3060 — end-to-end, honestly measured/sim-backed at each step.

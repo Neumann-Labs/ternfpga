@@ -60,3 +60,29 @@ specifically **host-side attention over DRAM-resident KV**.
 _Reproduce:_ `python soc/firmware/gen_glue_luts.py > soc/firmware/glue_luts.h`; build `bench_glue_int.c`
 via the plain `litex_bare_metal_demo` flow vs `build_dmabw`; flash + `litex_term`. **Keep the
 `irq_setmask(0); irq_setie(1)` block** — without it the UART stalls.
+
+---
+
+## Phase 5 — on-fabric attention flips the verdict
+
+The fix for the glue-bound result: move attention to the fabric. `rtl/attention_unit.sv` (KV in
+BRAM, scores int16-MAC → shift+exp-LUT softmax → a·V) is **bit-exact** vs the oracle
+(`ATTENTION_UNIT_PASS`) and runs at **~1 MAC/cycle**: ~165K cyc/layer (×20 heads) vs the **16.2M**
+host attention — a **~98× collapse** (~49× at T=64). Synthesis fits the 35T (24% LUT, **4 DSP**,
+18.5 BRAM; Fmax ~86 MHz, immaterial as attention is ~1.6% of the layer — `attention_unit_syn.md`).
+
+Recomputed cycles/token with on-fabric attention replacing the 16.2M host term:
+
+| | cyc/layer | J/token | vs RTX 3060 (3.67) |
+|---|---:|---:|---:|
+| host-split (measured) | 28.1 M | **4.32** | 1.2× **worse** |
+| **+ on-fabric attention** (this work) | **12.2 M** | **~1.99** | **~1.8× better** |
+| engine bound (+ FFN-glue on-fabric, future) | ~8.9 M | ~1.47 | ~2.5× better |
+
+New glue/layer = norms 0.54M + RoPE 0.08M + FFN 2.58M (all measured) + on-fabric attention ~0.33M
+(sim-measured) ≈ **3.5M** — the engine (8.68M) is now **71% of the layer**: the system is
+**ENGINE-DOMINANT**, and the 0-DSP engine's energy win is realized at the system level (**~1.8×
+under the GPU**, flipped from 1.2× worse). The largest remaining glue is the **FFN glue** (2.58M,
+DRAM-bound on the host) — moving *it* on-fabric next approaches the ~1.47 J/token engine bound
+(~2.5×). Engine + glue cycle terms are silicon-measured; the attention unit is sim-/synth-backed
+(on-board SoC integration with a tuned T_MAX is the remaining step).

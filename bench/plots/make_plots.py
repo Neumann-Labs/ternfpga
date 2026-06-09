@@ -242,26 +242,26 @@ def ddr3_roofline():
 
 
 def full_model_energy():
-    """Source: glue_measured.md — fully-measured (engine + glue) vs engine-only vs RTX 3060."""
-    labels = ["FPGA full system\n(host-split, MEASURED)", "RTX 3060\n(measured)",
-              "FPGA engine only\n(measured rate)"]
-    vals = [4.32, 3.67, 1.47]
-    colors = [ORANGE, STEEL, GREEN]
-    fig, ax = plt.subplots(figsize=(7.6, 4.5))
-    bars = ax.bar(labels, vals, color=colors, width=0.6)
+    """Source: glue_measured.md + attention_unit — the J/token progression vs RTX 3060."""
+    labels = ["host-split\n(MEASURED)", "RTX 3060\n(measured)", "+ on-fabric attn\n(this work)",
+              "engine bound\n(FFN-glue on-fabric)"]
+    vals = [4.32, 3.67, 1.99, 1.47]
+    colors = [GREY, STEEL, GREEN, "#1e6b3a"]
+    fig, ax = plt.subplots(figsize=(8.0, 4.6))
+    bars = ax.bar(labels, vals, color=colors, width=0.62)
     for b, v in zip(bars, vals):
         ax.text(b.get_x() + b.get_width() / 2, v + 0.07, f"{v:.2f}", ha="center", va="bottom",
                 fontsize=9, fontweight="bold")
     ax.axhline(3.67, color=STEEL, lw=1.0, ls=":")
     ax.set_ylabel("J / token (BitNet-2B, lower is better)")
-    ax.set_title("Fully-measured energy/token — engine wins, host-glue erases it")
+    ax.set_title("On-fabric attention flips the system: glue-bound → ~1.8× under the GPU")
     ax.set_ylim(0, 5.0)
     ax.spines[["top", "right"]].set_visible(False)
-    ax.annotate("the 0-DSP engine is ~2.5× better...", xy=(2, 1.47), xytext=(0.9, 2.3),
-                fontsize=8, color=GREEN, arrowprops=dict(arrowstyle="->", color=GREEN))
-    ax.annotate("...but host-side attention (DRAM-bound)\nmakes the system glue-bound.\n"
-                "Fix: attention on the fabric.", xy=(0, 4.32), xytext=(0.05, 4.45),
-                fontsize=8, color=NAVY)
+    ax.annotate("host-side attention\n(DRAM-bound) →\nglue-bound, worse\nthan the GPU", xy=(0, 4.32),
+                xytext=(0.05, 3.95), fontsize=7.5, color=NAVY)
+    ax.annotate("attention on the fabric\n(~98× collapse) →\n~1.8× UNDER the GPU", xy=(2, 1.99),
+                xytext=(1.75, 2.5), fontsize=7.5, color=GREEN,
+                arrowprops=dict(arrowstyle="->", color=GREEN))
     _save(fig, "full_model_energy.png")
 
 
