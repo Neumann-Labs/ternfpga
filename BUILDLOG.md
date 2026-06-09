@@ -280,6 +280,18 @@ the final per-token *output* scale. This justifies an **on-chip glue unit** that
 gate/up→down path entirely on-chip — avoiding the soft-VexRiscv round-trip the research flagged as
 the latency risk.
 
-**Next:** build the on-chip glue unit (relu²+elementwise via DSPs, two-pass absmax requant from a
-wide-N BRAM) bit-exact vs `ffn_glue_ref`, then the FFN controller sequencing gate→up→glue→down
-over `ternary_gemv_stream`.
+**(d) FFN block proven end-to-end — host-split, on the real GEMV.** Engineering call: the on-chip
+glue unit is a genuine optimization (the integer-only identity makes it elegant) but an intricate
+multi-iteration build — 71-bit `N`, a two-pass absmax requant, a fixed-point reciprocal, ~14 BRAM
+at full FFN width — and it is **not on the critical path** to the headline measured number. So we
+took the **host-split** the research validated: the FPGA runs the three ternary matmuls
+(`ternary_gemv_stream`), the host does the now integer-only glue. `sim/tb_ffn_block.py` drives the
+real RTL GEMV three times (gate → up → down) with the host glue in Python between, and checks every
+integer stage **bit-exact vs `ffn_ref`** (gate/up/down) plus the glue `h_q` vs `ffn_ref` — **PASS
+over 4 trials**. The FFN block datapath is complete and simulation-validated end-to-end; the on-chip
+glue is parked as a documented, designed optimization (best revisited *after* we have an on-board
+baseline, so its benefit can be measured, and likely paired with FFN tiling to bound the BRAM).
+
+**Next:** **on-board** the streaming GEMV as a LiteX peripheral (reuse the `soc/` patterns) and run
+the FFN from firmware (the integer-only glue is simple C) — the path to a **measured on-board
+energy/token** for a real-width computation, the headline deliverable.

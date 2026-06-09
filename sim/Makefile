@@ -22,9 +22,9 @@ COMMON := SIM=verilator TOPLEVEL_LANG=verilog EXTRA_ARGS=-Wno-fatal
 # tb_*.py (here) and the NumPy golden (../models) must be importable by the sim.
 export PYTHONPATH := $(TOPDIR):$(TOPDIR)/../models
 
-.PHONY: all dot gemv sparse pipe unpack packed pe gemvpipe feed tile tiled stream uart arty clean
+.PHONY: all dot gemv sparse pipe unpack packed pe gemvpipe feed tile tiled stream ffn uart arty clean
 
-all: dot gemv sparse pipe unpack packed pe gemvpipe feed tile tiled stream uart arty
+all: dot gemv sparse pipe unpack packed pe gemvpipe feed tile tiled stream ffn uart arty
 
 dot:
 > @echo "=== ternary_dot ==="
@@ -73,6 +73,10 @@ tiled:
 stream:
 > @echo "=== ternary_gemv_stream (BRAM-centric, pipelined) ==="
 > @$(MAKE) -f $(MKSIM) $(COMMON) TOPLEVEL=ternary_gemv_stream MODULE=tb_ternary_gemv_stream VERILOG_SOURCES="$(RTL)/ternary_dot_pipe.sv $(RTL)/ternary_gemv_stream.sv" SIM_BUILD=sim_build/ternary_gemv_stream COCOTB_RESULTS_FILE=results_stream.xml
+
+ffn:
+> @echo "=== ffn_block (full FFN end-to-end via the stream GEMV) ==="
+> @$(MAKE) -f $(MKSIM) $(COMMON) TOPLEVEL=ternary_gemv_stream MODULE=tb_ffn_block VERILOG_SOURCES="$(RTL)/ternary_dot_pipe.sv $(RTL)/ternary_gemv_stream.sv" SIM_BUILD=sim_build/ffn_block COCOTB_RESULTS_FILE=results_ffn.xml
 
 uart:
 > @echo "=== uart_tx ==="
