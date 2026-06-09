@@ -1,0 +1,16 @@
+# ternfpga Python deps for the sim suite, model pipeline, and figures.
+# System deps (NOT pip): Verilator 5.020+, and for FPGA work Vivado + openFPGALoader.
+#
+#   pip install -r requirements.txt
+#
+# Core (sim suite + encoding self-test + figures — `bash tools/repro.sh`):
+cocotb>=1.9,<2
+numpy
+matplotlib
+
+# Model validation (`bash tools/repro.sh --full`, models/validate_ffn.py, sparsity, GPU baseline):
+torch
+transformers>=4.46,<5          # 5.x has broken BitNet/Qwen model-class imports
+accelerate                     # BitNet HF loader requires it
+safetensors
+huggingface_hub
