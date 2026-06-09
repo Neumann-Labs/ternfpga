@@ -339,6 +339,17 @@ The FFN-relevant host glue is done; the broader transformer glue (RMSNorm/RoPE/a
 is full-transformer-block scope (beyond the re-scoped one-FFN-block target). *(Caveat: double math
 on a soft CPU is slow — the on-chip glue unit is the documented latency optimization.)*
 
+**(h) Relu-fication upside — measured the Direction-D ceiling.** Direction D's payoff scales with
+FFN sparsity. We measured a second, relu-fied model with the same instrument: **ProSparse-Llama-2-7B
+= 83.3% sparse** (75.6–89.9% by layer; CPU bf16, consistent with the paper's 89.3%) vs BitNet's
+**59.8%**. So the gather saves ~56% of `down_proj` bytes on stock BitNet but **~80%** on a relu-fied
+model — relu-fication roughly **doubles** the payoff (Direction D: ~2.5× → ~5×), and the gather RTL
+already exploits whatever sparsity the model provides. A relu-fied BitNet (ternary weights + ~85%
+activation sparsity) is the full **A×D** stack — future fine-tune work; the FPGA datapath to capture
+it exists. ([`relu_fication_upside.md`](bench/results/relu_fication_upside.md), figure
+`bench/plots/sparsity_compare.png`; `measure_activation_sparsity.py` gained a `--dtype` flag for the
+big CPU load.)
+
 **Next:** the **DMA weight feed** (#24) — stream weight tiles from DDR3 into the engine at the
 bandwidth roofline (vs CPU CSR writes), with a wider lane count so the engine reaches the
 bandwidth-bound regime — then run the full FFN from firmware (the validated C glue) for a

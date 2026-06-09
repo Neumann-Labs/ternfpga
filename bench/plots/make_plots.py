@@ -171,6 +171,31 @@ def gather_savings():
     _save(fig, "gather_savings.png")
 
 
+def sparsity_compare():
+    """Source: activation_sparsity.md (BitNet 59.8%) + relu_fication_upside.md (ProSparse 83.3% measured)."""
+    models = ["BitNet b1.58 2B-4T\n(squared-ReLU)", "ProSparse-Llama-2-7B\n(ReLU, relu-fied)"]
+    spars = [59.8, 83.3]
+    saved = [56, 80]
+    x = np.arange(len(models))
+    w = 0.36
+    fig, ax = plt.subplots(figsize=(7.6, 4.3))
+    ax.axhspan(85, 95, color=GREEN, alpha=0.13, label="relu-fication literature (85–95%)")
+    b1 = ax.bar(x - w / 2, spars, w, label="FFN activation sparsity (% zero)", color=STEEL)
+    b2 = ax.bar(x + w / 2, saved, w, label="down_proj bytes saved (gather)", color=ORANGE)
+    for bars in (b1, b2):
+        for b in bars:
+            ax.text(b.get_x() + b.get_width() / 2, b.get_height() + 1.2, f"{b.get_height():.0f}",
+                    ha="center", va="bottom", fontsize=8, fontweight="bold")
+    ax.set_xticks(x)
+    ax.set_xticklabels(models)
+    ax.set_ylabel("%")
+    ax.set_title("Direction-D upside: relu-fication ~doubles the gather payoff (measured)")
+    ax.legend(fontsize=8, loc="upper left")
+    ax.set_ylim(0, 100)
+    ax.spines[["top", "right"]].set_visible(False)
+    _save(fig, "sparsity_compare.png")
+
+
 if __name__ == "__main__":
     energy_per_token()
     activation_sparsity()
@@ -178,4 +203,5 @@ if __name__ == "__main__":
     bandwidth_roofline()
     bram_fix()
     gather_savings()
-    print("done — 6 figures in", OUT)
+    sparsity_compare()
+    print("done — 7 figures in", OUT)

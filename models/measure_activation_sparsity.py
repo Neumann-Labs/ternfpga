@@ -63,11 +63,15 @@ def main():
     ap.add_argument("--model", default="microsoft/BitNet-b1.58-2B-4T")
     ap.add_argument("--trust-remote-code", action="store_true")
     ap.add_argument("--device", default="cpu", help="cpu or cuda (sparsity is dtype-invariant)")
+    ap.add_argument("--dtype", default="auto", help="auto|float32|float16|bfloat16 (use float16 for big CPU loads)")
     ap.add_argument("--eps", type=float, default=1e-8, help="|x|<eps counts as zero")
     ap.add_argument("--out", default="bench/results/activation_sparsity.md")
     args = ap.parse_args()
 
-    dtype = torch.float32 if args.device == "cpu" else torch.bfloat16
+    if args.dtype != "auto":
+        dtype = {"float32": torch.float32, "float16": torch.float16, "bfloat16": torch.bfloat16}[args.dtype]
+    else:
+        dtype = torch.float32 if args.device == "cpu" else torch.bfloat16
     load_kw = {} if args.device == "cpu" else {"device_map": args.device}
     print(f"loading {args.model} (dtype {dtype}, device {args.device}) ...", flush=True)
     tok = AutoTokenizer.from_pretrained(args.model, trust_remote_code=args.trust_remote_code)
