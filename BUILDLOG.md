@@ -518,3 +518,30 @@ roofline (Risk-1 survives) → measured unstructured sparsity (Risk-2 holds) →
 (glue-bound) → **on-fabric attention (bit-exact, synth-fit) flips the system to ~1.8× under the
 GPU.** A multiply-free ternary LLM engine on a $130 board whose system-level energy/token beats an
 RTX 3060 — end-to-end, honestly measured/sim-backed at each step.
+
+---
+
+## Phase 6 — attention on silicon (the collapse, measured on real hardware)
+
+**(s) attention_unit on the physical Arty (#42–#44).** Wrapped `attention_unit.sv` as a LiteX CSR
+peripheral (`soc/attention_unit_csr.py`, T_MAX=64 for BRAM budget), built the SoC, flashed it, and
+ran a real attention from firmware (`main_attn.c`: load q/KV/exp-LUT via CSR → `start` → read
+num[d]+sum_e + cycle counter):
+```
+ATTN_ONBOARD_PASS  (128 num + sum_e bit-exact)
+MEASURED attention cycles/query=16456 (T=64 D=128) sum_e=1373845
+```
+**Bit-exact on silicon** (all 128 num[d] + sum_e match the oracle), **16456 cyc/query** (sim 16384;
++0.4% FSM) → ~1 MAC/cycle **confirmed on hardware** → ~329K cyc/layer vs the measured 16.2M host
+attention = **~49× collapse, silicon-measured** (~98× at T=32). Attention now has the full
+**PyTorch → sim → silicon** chain the FFN has, so the Phase-5 ~1.8×-under-GPU system result's key
+new term is **silicon-confirmed**, not just sim/synth. Timing honesty: post-P&R WNS −1.268 ns @
+100 MHz (model says ~89 MHz), but the chip ran it bit-exact at 100 MHz at nominal conditions
+(pessimistic worst-case model); a pipeline register on the score-MAC→max path gives guaranteed
+margin (scoped). ([`attention_onboard.md`](bench/results/attention_onboard.md).)
+
+**Status of the headline, by evidence tier:** *silicon-measured* — ternary engine (1 cyc/tile),
+DDR3 roofline (1.42 GB/s), host glue (19.4M/layer), on-fabric attention (16456 cyc/query, ~49×).
+*Derived from those* — system ~1.99 J/token (~1.8× under the 3060), engine-dominant. *Still open* —
+FFN-glue on-fabric (→ ~1.47 J/tok), full decode-loop SoC integration, live (vs Vivado-est) power,
+independent reproduction.
