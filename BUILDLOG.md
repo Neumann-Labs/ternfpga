@@ -371,8 +371,33 @@ a test-vector fix (`nt=m=63`), no bitstream rebuild. Honest scope: throughput is
 is the Vivado estimate, the GPU per-block is *extrapolated*; a full-model J/token + the
 bandwidth-bound wider-K + DDR3-DMA regime + a live power read remain future work.
 
-**The arc, complete:** ternary PE → silicon (Phase 0) → DDR3 + RISC-V SoC (Phase 1) → research
+**The Phase-2 arc:** ternary PE → silicon (Phase 0) → DDR3 + RISC-V SoC (Phase 1) → research
 re-scope → BRAM-centric scalable engine → FFN datapath PyTorch(cosine 1.0)→sim→silicon →
 activation-sparse gather → host-glue firmware → relu-fication upside → **measured on-board
 throughput + energy**. A multiplier-free, sparsity-skipping ternary LLM-FFN engine on a $130 board,
 measured end-to-end.
+
+---
+
+## Phase 3 — full-model decode loop + a measured energy/token
+
+A second deep-research review ([`docs/research/phase3-plan.md`](docs/research/phase3-plan.md))
+graded the project complete as a portfolio/blog artifact but not as a paper/product: the headline
+is *energy/token* yet the strongest measured number is *per-FFN-block*. Phase 3 closes that — a
+**measured full-model J/token** on the same board — and is designed to expose two risks honestly:
+single-channel DDR3 bandwidth (Risk 1) and whether ~60% activation sparsity stays *unstructured* at
+scale (Risk 2).
+
+**(j) Measured DDR3 roofline — Risk-1 verdict: SURVIVES.** A hardware `LiteDRAMDMAReader` on a
+native crossbar port (`soc/ternary_dma_bw.py`) streamed 30 MiB from DDR3 under a cycle counter:
+**1423 MB/s sustained** (2 M × 16-B words in 2.248 M cycles = **0.89 word/cycle = 89% of the
+1.6 GB/s native-port peak**; non-zero checksum). That is **4× the original ~0.35 GB/s guess** and
+not the BIOS Memspeed (37–49 MiB/s CPU memcpy). Batch-1 decode is bandwidth-bound, so this caps
+throughput: a 0.7B ternary model (~175 MB/token) → **8.1 tok/s ceiling**, **~60 mJ/token floor**
+(489 mW est. SoC) — usable, the same order as TeLLMe v2's 25 tok/s on a *faster-DDR4* KV260, and
+~20–60× under the 3060's energy. The K=8 engine demands only 200 MB/s (14% of DDR3 → **compute-
+bound**, confirming the earlier finding); the path to the channel is **widen K (~56)**, not more
+bandwidth. The roofline does **not** sink the thesis.
+([`ddr3_roofline_measured.md`](bench/results/ddr3_roofline_measured.md), figure
+`bench/plots/ddr3_roofline.png`.) The number is a *floor* — the delivered tok/s + J/token come from
+the real decode loop (#31/#32), with glue overhead. **Next:** the attention datapath (#29).

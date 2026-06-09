@@ -217,6 +217,30 @@ def ffn_block_energy():
     _save(fig, "ffn_block_energy.png")
 
 
+def ddr3_roofline():
+    """Source: ddr3_roofline_measured.md — measured 1423 MB/s sustained vs engine demand by K."""
+    Ks = [8, 16, 32, 56, 64]
+    demand = [25 * k for k in Ks]                      # MB/s = 25*K (K/4 B/tile x 100M tiles/s)
+    ddr3 = 1423                                        # measured sustained read
+    colors = [GREEN if d <= ddr3 else STEEL for d in demand]
+    fig, ax = plt.subplots(figsize=(7.6, 4.4))
+    bars = ax.bar([f"K={k}" for k in Ks], demand, color=colors, width=0.62)
+    for b, d in zip(bars, demand):
+        ax.text(b.get_x() + b.get_width() / 2, d + 25, f"{d}", ha="center", va="bottom", fontsize=8)
+    ax.axhline(ddr3, color=ORANGE, lw=2.2, ls="--")
+    ax.text(4.4, ddr3 + 30, f"measured DDR3 = {ddr3} MB/s (89% of peak)", ha="right",
+            color=ORANGE, fontsize=9, fontweight="bold")
+    ax.annotate("compute-bound\n(engine < DDR3)", xy=(0, 200), xytext=(0.4, 700), fontsize=8,
+                color=NAVY, arrowprops=dict(arrowstyle="->", color=NAVY))
+    ax.annotate("saturates DDR3\n(K≈56)", xy=(3, 1400), xytext=(1.9, 1050), fontsize=8,
+                color=NAVY, arrowprops=dict(arrowstyle="->", color=NAVY))
+    ax.set_ylabel("weight-stream demand (MB/s)")
+    ax.set_title("DDR3 roofline — measured 1.42 GB/s caps tok/s; widen K to use it")
+    ax.set_ylim(0, 1750)
+    ax.spines[["top", "right"]].set_visible(False)
+    _save(fig, "ddr3_roofline.png")
+
+
 if __name__ == "__main__":
     energy_per_token()
     activation_sparsity()
@@ -226,4 +250,5 @@ if __name__ == "__main__":
     gather_savings()
     sparsity_compare()
     ffn_block_energy()
-    print("done — 8 figures in", OUT)
+    ddr3_roofline()
+    print("done — 9 figures in", OUT)
