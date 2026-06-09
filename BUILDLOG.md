@@ -292,6 +292,24 @@ over 4 trials**. The FFN block datapath is complete and simulation-validated end
 glue is parked as a documented, designed optimization (best revisited *after* we have an on-board
 baseline, so its benefit can be measured, and likely paired with FFN tiling to bound the BRAM).
 
-**Next:** **on-board** the streaming GEMV as a LiteX peripheral (reuse the `soc/` patterns) and run
-the FFN from firmware (the integer-only glue is simple C) — the path to a **measured on-board
-energy/token** for a real-width computation, the headline deliverable.
+**(e) On-board — the scalable engine on silicon.** Wrapped `ternary_gemv_stream` as a LiteX CSR
+peripheral (`soc/ternary_gemv_csr.py`, `soc/ternary_gemv_arty.py`), built the VexRiscv + LiteDRAM
+SoC bitstream, flashed the Arty, and ran firmware (`soc/firmware/main_gemv.c`) that loads the
+activation into the engine BRAM, streams weight tiles, and reads `y` back:
+```
+Memtest OK
+=== ternfpga on-board streaming GEMV (K=8 NT=4 M=16 KT=32) ===
+GEMV_ONBOARD_PASS  (16 rows bit-exact vs golden)
+```
+**All timing constraints met @ 100 MHz; total SoC on-chip power 0.500 W** (the engine itself is
+479 LUT / 0 DSP / 10 BRAM; DDR3+CPU dominate the watt). The *scalable, real-width* BRAM-centric
+GEMV — the exact engine the FFN runs gate/up/down on — is now proven on silicon in a real SoC, not
+just the earlier toy `ternary_tile`. Snag avoided: rather than trust the wide-CSR `.re` commit
+ordering for the 64-bit `x_wdata`, used a dedicated `x_we` pulse (data stable first). Honest gap:
+this is `KT=32` with **CPU-streamed weights** (not the LiteDRAM roofline) — a *measured* tok/s and
+J/token needs the DMA feed at real width. ([`onboard_gemv_stream.md`](bench/results/onboard_gemv_stream.md))
+
+**Next:** the **DMA weight feed** (#24) — stream weight tiles from DDR3 into the engine at the
+bandwidth roofline (vs CPU CSR writes) — then scale `KT`/`M` to real FFN width and run the full
+block from firmware for a **measured on-board energy/token**, the headline number. In parallel:
+the **activation-sparsity gather** (#19) to skip the ~60% zero `down_proj` columns.
