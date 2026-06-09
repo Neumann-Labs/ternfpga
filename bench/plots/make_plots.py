@@ -145,10 +145,37 @@ def bram_fix():
     _save(fig, "bram_fix.png")
 
 
+def gather_savings():
+    """Source: sim/tb_gemv_gather (down_proj column-sparse gather) + activation_sparsity.md."""
+    dens = np.linspace(0.05, 1.0, 100)
+    fig, ax = plt.subplots(figsize=(7.4, 4.3))
+    ax.plot(dens * 100, dens * 100, color=NAVY, lw=2, label="gathered (column-sparse)")
+    ax.plot([5, 100], [100, 100], color=GREY, ls="--", lw=1.5,
+            label="dense / GPU (no per-token skip)")
+    sx = [100, 60, 40.2, 15]                    # density %
+    sy = [100, 62.5, 43.8, 18.8]                # measured fetched % (sim, incl. K=16 padding)
+    ax.scatter(sx, sy, color=ORANGE, zorder=5)
+    ax.annotate("BitNet b1.58 measured\n~40% active → 56% saved", (40.2, 43.8),
+                textcoords="offset points", xytext=(10, 26), fontsize=8, color=NAVY,
+                arrowprops=dict(arrowstyle="->", color=NAVY))
+    ax.annotate("relu-fied ~15%\n→ 81% saved", (15, 18.8), textcoords="offset points",
+                xytext=(26, 36), fontsize=8, color=GREEN,
+                arrowprops=dict(arrowstyle="->", color=GREEN))
+    ax.set_xlabel("FFN activation density (% nonzero per token)")
+    ax.set_ylabel("down_proj weight bytes fetched (% of dense)")
+    ax.set_title("Activation-sparse gather: fetch scales with density (down_proj)")
+    ax.legend(fontsize=8, loc="upper left")
+    ax.set_xlim(0, 105)
+    ax.set_ylim(0, 108)
+    ax.spines[["top", "right"]].set_visible(False)
+    _save(fig, "gather_savings.png")
+
+
 if __name__ == "__main__":
     energy_per_token()
     activation_sparsity()
     fit_sweep()
     bandwidth_roofline()
     bram_fix()
-    print("done — 5 figures in", OUT)
+    gather_savings()
+    print("done — 6 figures in", OUT)

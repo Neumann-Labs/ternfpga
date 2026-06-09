@@ -309,7 +309,25 @@ ordering for the 64-bit `x_wdata`, used a dedicated `x_we` pulse (data stable fi
 this is `KT=32` with **CPU-streamed weights** (not the LiteDRAM roofline) — a *measured* tok/s and
 J/token needs the DMA feed at real width. ([`onboard_gemv_stream.md`](bench/results/onboard_gemv_stream.md))
 
+**(f) Activation-sparse gather — Direction D, the column-sparse half.** The existing
+`ternary_gemv_sparse` skips *output rows* (the `up_proj` case: skip rows where `gate≤0`). The
+`down_proj` sparsity is in the *contraction* dim (`hq` ~60% zero), so the win is **column-sparse**:
+compact the nonzero `hq` and gather only the matching `Wd` columns, then run the *unchanged* dense
+stream GEMV on the shorter vector. `sim/tb_gemv_gather.py` proves it **bit-exact vs the dense
+golden** across densities and measures the fetch reduction:
+
+| activation density | bytes saved |
+|---|---|
+| 60% | 37.5% |
+| **40.2% (BitNet measured)** | **56.2%** |
+| 15% (relu-fied) | 81.2% |
+
+At the measured BitNet ~40% active, `down_proj` fetches ~44% of the dense bytes — bit-exact, with
+the engine untouched (the gather is a feed/DMA concern). This is *per-token, unstructured* sparsity
+a GPU's dense / 2:4 array can't exploit. ([`down_proj_gather.md`](bench/results/down_proj_gather.md),
+figure `bench/plots/gather_savings.png`.)
+
 **Next:** the **DMA weight feed** (#24) — stream weight tiles from DDR3 into the engine at the
-bandwidth roofline (vs CPU CSR writes) — then scale `KT`/`M` to real FFN width and run the full
-block from firmware for a **measured on-board energy/token**, the headline number. In parallel:
-the **activation-sparsity gather** (#19) to skip the ~60% zero `down_proj` columns.
+bandwidth roofline (vs CPU CSR writes), implementing the hardware index-compaction + column gather
+this measurement isolates — then scale `KT`/`M` to real FFN width and run the full block from
+firmware for a **measured on-board energy/token**, the headline number.
