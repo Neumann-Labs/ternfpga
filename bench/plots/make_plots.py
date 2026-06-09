@@ -241,6 +241,26 @@ def ddr3_roofline():
     _save(fig, "ddr3_roofline.png")
 
 
+def full_model_energy():
+    """Source: full_model_projection.md — measured engine rate x BitNet-2B dims vs RTX 3060."""
+    labels = ["RTX 3060\n(measured)", "FPGA engine\n(measured rate)", "FPGA engine\n+ gather"]
+    vals = [3.67, 1.47, 1.28]
+    colors = [STEEL, GREEN, GREEN]
+    fig, ax = plt.subplots(figsize=(7.0, 4.3))
+    bars = ax.bar(labels, vals, color=colors, width=0.6)
+    for b, v in zip(bars, vals):
+        ax.text(b.get_x() + b.get_width() / 2, v + 0.06, f"{v:.2f}", ha="center", va="bottom",
+                fontsize=9, fontweight="bold")
+    ax.set_ylabel("J / token (BitNet-2B, lower is better)")
+    ax.set_title("Full-model energy/token — measured engine rate × real dims")
+    ax.set_ylim(0, 4.2)
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.annotate("~2.5× better\n(engine compute, K=8;\nglue = open variable)", xy=(1, 1.47),
+                xytext=(1.4, 2.7), fontsize=8, color=NAVY,
+                arrowprops=dict(arrowstyle="->", color=NAVY))
+    _save(fig, "full_model_energy.png")
+
+
 if __name__ == "__main__":
     energy_per_token()
     activation_sparsity()
@@ -251,4 +271,5 @@ if __name__ == "__main__":
     sparsity_compare()
     ffn_block_energy()
     ddr3_roofline()
+    full_model_energy()
     print("done — 9 figures in", OUT)

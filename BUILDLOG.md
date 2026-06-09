@@ -416,3 +416,22 @@ reproduces the golden's pre-`o_proj` vector to float precision (**`ATTN_GLUE_C_P
 VexRiscv is slow but one-time per token. The four q/k/v/o projections are ternary GEMVs that reuse
 the silicon-proven `ternary_gemv_stream` (validated end-to-end on-board at #30). **Next:** a full
 transformer layer on silicon (#30).
+
+**(l) Full layer golden + full-model projection (#30–#32).** The whole decoder layer
+(input-norm → attention → residual → post-norm → FFN → residual) is composed in
+`models/layer_ref.py` and validates at **cosine 1.000000** vs the real BitNet layer 0
+(`LAYER_VALIDATE_PASS`) — every numeric piece of a transformer layer now reproduced. With the
+on-silicon primitives in hand (engine **1 cyc/tile**, DDR3 **1.42 GB/s**, **0.489 W**), the
+full-model energy/token is **composed** ([`full_model_projection.md`](bench/results/full_model_projection.md),
+figure `full_model_energy.png`): BitNet-2B = 2.41 G ternary weights/token → **301.5 M engine
+cycles → ~3.0 s → ~1.47 J/token** of engine compute (×0.489 W), **~2.5× under the RTX 3060's
+measured 3.67 J/tok** (≈2.9× with the measured `down_proj` gather); energy is ~K-invariant, so
+widening K buys throughput (→ the 8 tok/s roofline), not lower energy. **Honest gap:** the
+host-glue *on-board cycle count is unmeasured* — the timing firmware (`bench_glue.c`) halts a few
+chars into UART once the heavy soft-float binary (injected rv32 `libgcc` + `fw_mathf.h` double
+math) is linked, where lean firmwares print fine; a toolchain/runtime wall, parked. The glue is
+*numerically* validated (`ATTN_GLUE_C_PASS`); naive soft-float glue would be the bottleneck, but
+the **proven integer-only FFN glue** (`ffn_glue.h`) is the template for cheap fixed-point glue that
+keeps the system engine-bound. So: the **0-DSP engine differentiator is measured** and ~2.5× ahead;
+a fully end-to-end measured J/token needs cheap fixed-point glue (or an on-chip glue unit) + the
+firmware wall resolved (or a litex_sim cycle count) — concrete, scoped follow-ups.
