@@ -196,6 +196,27 @@ def sparsity_compare():
     _save(fig, "sparsity_compare.png")
 
 
+def ffn_block_energy():
+    """Source: onboard_throughput_measured.md (measured 1 tile/cycle, 0.489 W SoC) + gpu_baseline.md."""
+    labels = ["RTX 3060\n(extrapolated)", "FPGA SoC\n(measured)", "FPGA SoC\n+ gather",
+              "FPGA engine\n(0-DSP, est.)"]
+    vals = [61, 32, 26, 5]
+    colors = [STEEL, ORANGE, ORANGE, GREEN]
+    fig, ax = plt.subplots(figsize=(7.6, 4.3))
+    bars = ax.bar(labels, vals, color=colors, width=0.62)
+    for b, v in zip(bars, vals):
+        ax.text(b.get_x() + b.get_width() / 2, v + 1.2, f"{v}", ha="center", va="bottom",
+                fontsize=9, fontweight="bold")
+    ax.set_ylabel("energy per FFN block (mJ, lower is better)")
+    ax.set_title("Energy / BitNet-2B FFN block — measured 1 tile/cycle × power")
+    ax.set_ylim(0, 70)
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.annotate("0-DSP datapath:\n~order of magnitude\n(SoC overhead is the gap)", xy=(3, 5),
+                xytext=(2.1, 30), fontsize=8, color=NAVY,
+                arrowprops=dict(arrowstyle="->", color=NAVY))
+    _save(fig, "ffn_block_energy.png")
+
+
 if __name__ == "__main__":
     energy_per_token()
     activation_sparsity()
@@ -204,4 +225,5 @@ if __name__ == "__main__":
     bram_fix()
     gather_savings()
     sparsity_compare()
-    print("done — 7 figures in", OUT)
+    ffn_block_energy()
+    print("done — 8 figures in", OUT)

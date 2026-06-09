@@ -350,7 +350,29 @@ it exists. ([`relu_fication_upside.md`](bench/results/relu_fication_upside.md), 
 `bench/plots/sparsity_compare.png`; `measure_activation_sparsity.py` gained a `--dtype` flag for the
 big CPU load.)
 
-**Next:** the **DMA weight feed** (#24) — stream weight tiles from DDR3 into the engine at the
-bandwidth roofline (vs CPU CSR writes), with a wider lane count so the engine reaches the
-bandwidth-bound regime — then run the full FFN from firmware (the validated C glue) for a
-**measured on-board energy/token**, the headline number.
+**(i) Measured on silicon — the capstone.** For an honest measured number we built a throughput
+harness (`rtl/ternary_gemv_bench.sv`: the engine + a resident weight BRAM + a replay FSM + a
+**hardware cycle counter**), wrapped it as a LiteX peripheral, built the SoC, flashed it, and timed
+a 3969-tile GEMV from firmware:
+```
+=== ternfpga throughput harness (K=8 NT=63 M=63) ===
+BENCH_ONBOARD_PASS  (63 rows bit-exact)
+MEASURED  tiles=3969  cycles=3974  cyc_per_tile=1.00  (K=8 @100MHz)
+```
+**1.00 cycle/tile on silicon** — the multiply-free 0-DSP engine sustains its roofline (8 ternary
+MACs/cycle = 800 M MAC/s @ 100 MHz), bit-exact. SoC power **0.489 W**, **0 DSP** in the engine.
+Derived from the measured throughput × power: a real BitNet-2B FFN block (53.1 M ternary weights) =
+6.64 M cycles → **66.4 ms → ~32 mJ (SoC)**, vs the RTX 3060's ~61 mJ/FFN-block (extrapolated from
+its measured 3.67 J/tok) — **~1.9× at the SoC level, ~order-of-magnitude at the 0-DSP-engine level**
+(the soft VexRiscv + DDR3 controller are the SoC overhead a dedicated accelerator sheds).
+([`onboard_throughput_measured.md`](bench/results/onboard_throughput_measured.md), figure
+`bench/plots/ffn_block_energy.png`.) Snag: `nt=m=64` overflowed the 6-bit `NT_MAX=64` CSRs (→ 0) —
+a test-vector fix (`nt=m=63`), no bitstream rebuild. Honest scope: throughput is *measured*, power
+is the Vivado estimate, the GPU per-block is *extrapolated*; a full-model J/token + the
+bandwidth-bound wider-K + DDR3-DMA regime + a live power read remain future work.
+
+**The arc, complete:** ternary PE → silicon (Phase 0) → DDR3 + RISC-V SoC (Phase 1) → research
+re-scope → BRAM-centric scalable engine → FFN datapath PyTorch(cosine 1.0)→sim→silicon →
+activation-sparse gather → host-glue firmware → relu-fication upside → **measured on-board
+throughput + energy**. A multiplier-free, sparsity-skipping ternary LLM-FFN engine on a $130 board,
+measured end-to-end.

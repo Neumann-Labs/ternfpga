@@ -12,7 +12,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "models"))
 from ternary_ref import pack_activations, pack_weights, ternary_gemv_golden  # noqa: E402
 
-K, NT, M = 8, 64, 64          # KT = 512, 4096 weight tiles
+K, NT, M = 8, 63, 63          # KT = 504, 3969 weight tiles (nt/m <= 63 fit the 6-bit CSRs)
 KT = K * NT
 import random
 rng = random.Random(4242)
