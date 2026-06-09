@@ -401,3 +401,18 @@ bandwidth. The roofline does **not** sink the thesis.
 ([`ddr3_roofline_measured.md`](bench/results/ddr3_roofline_measured.md), figure
 `bench/plots/ddr3_roofline.png`.) The number is a *floor* — the delivered tok/s + J/token come from
 the real decode loop (#31/#32), with glue overhead. **Next:** the attention datapath (#29).
+
+**(k) Attention datapath — golden + host glue, validated.** Attention is the other half of a
+transformer layer (the FFN was Phase 2). We pinned the exact BitNet attention from the real model
+(`models/inspect_bitnet_attn.py`): GQA **20 query / 5 KV heads × 128**, RoPE **θ=500000**, causal
+softmax, and an **`attn_sub_norm` (RMSNorm) before `o_proj`** — the "diff with Llama". The NumPy
+golden (`models/attn_ref.py`, reusing the FFN's `bitlinear`) validates at **cosine 1.000000**
+(mean rel err 5e-06, `ATTN_VALIDATE_PASS`) against `microsoft/BitNet-b1.58-2B-4T` layer 0. The
+host glue (`soc/firmware/attn_glue.h`) — dequant q/k/v → RoPE → KV-cache append → per-head causal
+scores/softmax → a·V → `attn_sub_norm` → int8 requant, as one **autoregressive decode step** —
+reproduces the golden's pre-`o_proj` vector to float precision (**`ATTN_GLUE_C_PASS`**, cosine
+1.0000000, max rel err 2.5e-06, native-compiled, growing KV cache). Unlike the FFN glue this is
+*not* integer-only (softmax/RoPE are float), so it matches to float, not bit-exact — soft-float on
+VexRiscv is slow but one-time per token. The four q/k/v/o projections are ternary GEMVs that reuse
+the silicon-proven `ternary_gemv_stream` (validated end-to-end on-board at #30). **Next:** a full
+transformer layer on silicon (#30).
