@@ -22,9 +22,9 @@ COMMON := SIM=verilator TOPLEVEL_LANG=verilog EXTRA_ARGS=-Wno-fatal
 # tb_*.py (here) and the NumPy golden (../models) must be importable by the sim.
 export PYTHONPATH := $(TOPDIR):$(TOPDIR)/../models
 
-.PHONY: all dot gemv sparse pipe unpack packed pe gemvpipe feed tile tiled stream ffn gather uart arty clean
+.PHONY: all dot gemv sparse pipe unpack packed pe gemvpipe feed tile tiled stream ffn gather bench uart arty clean
 
-all: dot gemv sparse pipe unpack packed pe gemvpipe feed tile tiled stream ffn gather uart arty
+all: dot gemv sparse pipe unpack packed pe gemvpipe feed tile tiled stream ffn gather bench uart arty
 
 dot:
 > @echo "=== ternary_dot ==="
@@ -81,6 +81,10 @@ ffn:
 gather:
 > @echo "=== gemv_gather (down_proj column-sparse activation gather) ==="
 > @$(MAKE) -f $(MKSIM) $(COMMON) TOPLEVEL=ternary_gemv_stream MODULE=tb_gemv_gather VERILOG_SOURCES="$(RTL)/ternary_dot_pipe.sv $(RTL)/ternary_gemv_stream.sv" SIM_BUILD=sim_build/gemv_gather COCOTB_RESULTS_FILE=results_gather.xml
+
+bench:
+> @echo "=== ternary_gemv_bench (on-silicon throughput harness) ==="
+> @$(MAKE) -f $(MKSIM) $(COMMON) TOPLEVEL=ternary_gemv_bench MODULE=tb_ternary_gemv_bench VERILOG_SOURCES="$(RTL)/ternary_dot_pipe.sv $(RTL)/ternary_gemv_stream.sv $(RTL)/ternary_gemv_bench.sv" SIM_BUILD=sim_build/ternary_gemv_bench COCOTB_RESULTS_FILE=results_bench.xml
 
 uart:
 > @echo "=== uart_tx ==="
