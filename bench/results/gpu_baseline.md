@@ -37,3 +37,29 @@ model; even that is ~5–7× above the FPGA target.
   far ahead at large batch — a regime we explicitly do not compete in.
 
 Reproduce: [`../gpu_baseline/README.md`](../gpu_baseline/README.md).
+
+## Phase-3 update — engine-based head-to-head (measured rate, BitNet-2B)
+
+The FPGA J/token is no longer only a target: from the **measured** engine rate (1.00 cycle/tile,
+`onboard_throughput_measured.md`) × the real BitNet-2B dimensions × measured SoC power (0.489 W),
+the full-model **engine compute** is **~1.47 J/token** (~2.9 with the measured `down_proj` gather)
+— see [`full_model_projection.md`](full_model_projection.md).
+
+| system | model | J/token | basis |
+|---|---|---:|---|
+| **FPGA ternary engine** (Arty A7-35T, $130) | BitNet-2B | **~1.47** (~1.28 w/ gather) | measured engine rate × dims × power |
+| RTX 3060 (12 GB, ~$300) | BitNet-2B | **3.67** | measured (this doc) → **~2.5× worse** |
+| CPU 5950X | BitNet-2B | 4.62 | measured (this doc) |
+
+Field context (not directly J/token-comparable): **TeLLMe v2** (arXiv 2510.15926) runs a full
+BitNet-0.73B prefill+decode on a Kria KV260 at ~25 tok/s decode under ~5 W — but reports
+intelligence/J *ratios*, **no clean measured J/token** (so our J/token framing is differentiated).
+**FlightLLM** reports **6.0× energy efficiency vs a V100S** on LLaMA2-7B — but on a $6k+ Alveo
+U280, not a sub-$150 board. ternfpga's niche (ternary × *unstructured* per-token sparsity × $130
+board) stays unoccupied (`docs/research/`).
+
+**Honest:** the ~1.47 J/token is engine compute (measured rate, K=8) — the headline differentiator.
+The host-split glue adds overhead whose on-board cycle count is unmeasured (firmware wall, parked);
+naive soft-float glue would erode the lead, but the proven integer-only FFN glue is the template for
+keeping the system engine-bound. Energy is ~K-invariant; widening K buys throughput (8 tok/s
+roofline), not lower energy.

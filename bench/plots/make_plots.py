@@ -261,6 +261,30 @@ def full_model_energy():
     _save(fig, "full_model_energy.png")
 
 
+def sparsity_structure():
+    """Source: sparsity_structure.md — per-layer sparsity vs data-dependent fraction (Risk-2)."""
+    spars = [41.5, 73.7, 79.7, 71.7, 66.1, 66.9, 70.6, 67.6, 61.9, 55.6, 50.5, 46.4, 45.1, 45.8,
+             43.0, 41.3, 47.0, 51.6, 54.4, 57.2, 61.8, 67.1, 63.2, 67.3, 67.5, 66.4, 66.8, 65.2,
+             64.0, 58.6]
+    datadep = [94.8, 56.1, 72.4, 85.2, 90.9, 95.4, 97.2, 96.6, 97.6, 98.8, 98.9, 98.3, 98.4, 98.7,
+               99.1, 98.6, 98.4, 97.7, 96.8, 95.7, 95.5, 96.5, 96.3, 95.6, 95.9, 95.3, 95.0, 93.2,
+               93.9, 93.4]
+    x = list(range(len(spars)))
+    fig, ax = plt.subplots(figsize=(8.0, 4.4))
+    ax.plot(x, datadep, "-o", color=GREEN, ms=3, lw=1.8, label="data-dependent channels (%)")
+    ax.plot(x, spars, "-s", color=STEEL, ms=3, lw=1.8, label="zero fraction / sparsity (%)")
+    ax.axhline(68.9, color=ORANGE, lw=2.0, ls="--")
+    ax.text(29, 71, "static N:M captures only 68.9% of zeros", ha="right", color=ORANGE,
+            fontsize=8.5, fontweight="bold")
+    ax.set_xlabel("decoder layer")
+    ax.set_ylabel("percent")
+    ax.set_title("Sparsity is UNSTRUCTURED — ~94% data-dependent, Jaccard 0.42 (Risk-2)")
+    ax.set_ylim(30, 105)
+    ax.legend(loc="lower right", fontsize=8, frameon=False)
+    ax.spines[["top", "right"]].set_visible(False)
+    _save(fig, "sparsity_structure.png")
+
+
 if __name__ == "__main__":
     energy_per_token()
     activation_sparsity()
@@ -272,4 +296,5 @@ if __name__ == "__main__":
     ffn_block_energy()
     ddr3_roofline()
     full_model_energy()
-    print("done — 9 figures in", OUT)
+    sparsity_structure()
+    print("done — 11 figures in", OUT)

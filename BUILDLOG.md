@@ -435,3 +435,24 @@ the **proven integer-only FFN glue** (`ffn_glue.h`) is the template for cheap fi
 keeps the system engine-bound. So: the **0-DSP engine differentiator is measured** and ~2.5× ahead;
 a fully end-to-end measured J/token needs cheap fixed-point glue (or an on-chip glue unit) + the
 firmware wall resolved (or a litex_sim cycle count) — concrete, scoped follow-ups.
+
+**(m) Risk-2 — sparsity structure: genuinely unstructured (#33).** The deep-research review's
+second risk: the differentiator is *unstructured* per-token activation sparsity, but if the zeros
+were static / N:M-regular, a structured router would capture them and the edge would vanish.
+`models/sparsity_structure.py` hooks every `down_proj` input of BitNet-2B (62 tokens × 30 layers)
+and measures the *structure*: **mean 59.5% zero** (consistent with the 59.8% from #15), but
+**93.9% of channels are data-dependent** ("sometimes" active — only ~4% statically zero),
+token↔token **Jaccard 0.42** (tokens share <½ their active set), and a static **N:M mask captures
+only 68.9%** of the zeros. **Verdict: UNSTRUCTURED — the gather differentiator holds.** A
+TENET-style structured N:M would still fetch ~31% of the truly-zero columns; the on-fabric
+variable-count gather (Phase-2, 56% bytes saved) captures what N:M cannot. 28/30 layers are >93%
+data-dependent — consistent across the stack.
+([`sparsity_structure.md`](bench/results/sparsity_structure.md), figure `sparsity_structure.png`.)
+
+**Phase 3 — done.** Both research risks resolved POSITIVELY: **Risk-1** (single-channel DDR3 sinks
+the energy edge) — *survives* (1.42 GB/s measured → 8 tok/s ceiling, energy floor ~20–60× under the
+GPU). **Risk-2** (sparsity is structured) — *unstructured* (94% data-dependent). The full decode
+datapath is validated end-to-end (attention cosine 1.0 → glue `ATTN_GLUE_C_PASS` → full-layer
+cosine 1.0), and the full-model energy/token (~1.47 J/tok engine, **~2.5× under the RTX 3060**) is
+composed from on-silicon primitives. Parked, scoped: a fully-measured end-to-end J/token (needs
+cheap fixed-point glue + the firmware wall), live power, independent reproduction.
