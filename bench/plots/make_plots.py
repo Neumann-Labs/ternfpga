@@ -243,25 +243,25 @@ def ddr3_roofline():
 
 def full_model_energy():
     """Source: glue_measured.md + attention_unit — the J/token progression vs RTX 3060."""
-    labels = ["host-split\n(MEASURED)", "RTX 3060\n(measured)", "+ on-fabric attn\n(this work)",
-              "engine bound\n(FFN-glue on-fabric)"]
-    vals = [4.32, 3.67, 1.99, 1.47]
-    colors = [GREY, STEEL, GREEN, "#1e6b3a"]
-    fig, ax = plt.subplots(figsize=(8.0, 4.6))
-    bars = ax.bar(labels, vals, color=colors, width=0.62)
+    labels = ["host-split\n(MEASURED)", "RTX 3060", "+ attn\non-fabric", "+ FFN-glue\non-fabric",
+              "engine\nbound"]
+    vals = [4.32, 3.67, 1.99, 1.62, 1.47]
+    colors = [GREY, STEEL, GREEN, GREEN, "#1e6b3a"]
+    fig, ax = plt.subplots(figsize=(8.4, 4.6))
+    bars = ax.bar(labels, vals, color=colors, width=0.64)
     for b, v in zip(bars, vals):
         ax.text(b.get_x() + b.get_width() / 2, v + 0.07, f"{v:.2f}", ha="center", va="bottom",
                 fontsize=9, fontweight="bold")
     ax.axhline(3.67, color=STEEL, lw=1.0, ls=":")
     ax.set_ylabel("J / token (BitNet-2B, lower is better)")
-    ax.set_title("On-fabric attention flips the system: glue-bound → ~1.8× under the GPU")
+    ax.set_title("Moving glue on-fabric, term by term: 1.2× worse → ~2.3× under the GPU")
     ax.set_ylim(0, 5.0)
     ax.spines[["top", "right"]].set_visible(False)
-    ax.annotate("host-side attention\n(DRAM-bound) →\nglue-bound, worse\nthan the GPU", xy=(0, 4.32),
-                xytext=(0.05, 3.95), fontsize=7.5, color=NAVY)
-    ax.annotate("attention on the fabric\n(~98× collapse) →\n~1.8× UNDER the GPU", xy=(2, 1.99),
-                xytext=(1.75, 2.5), fontsize=7.5, color=GREEN,
-                arrowprops=dict(arrowstyle="->", color=GREEN))
+    ax.annotate("host-split:\nglue-bound,\nworse than GPU", xy=(0, 4.32), xytext=(0.05, 3.92),
+                fontsize=7.5, color=NAVY)
+    ax.annotate("attention (~49× silicon) +\nFFN glue (~165× sim) on-fabric →\n~2.3× UNDER the GPU,\n"
+                "nearing the 1.47 engine bound", xy=(3, 1.62), xytext=(1.5, 2.5),
+                fontsize=7.5, color=GREEN, arrowprops=dict(arrowstyle="->", color=GREEN))
     _save(fig, "full_model_energy.png")
 
 

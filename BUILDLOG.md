@@ -545,3 +545,33 @@ DDR3 roofline (1.42 GB/s), host glue (19.4M/layer), on-fabric attention (16456 c
 *Derived from those* — system ~1.99 J/token (~1.8× under the 3060), engine-dominant. *Still open* —
 FFN-glue on-fabric (→ ~1.47 J/tok), full decode-loop SoC integration, live (vs Vivado-est) power,
 independent reproduction.
+
+---
+
+## Phase 7 — FFN glue on-fabric: nearing the engine bound
+
+**(t) ffn_glue_unit.sv (#45–#47).** The last big host glue term — the FFN inter-projection glue
+(per channel `H=relu(gate)²·up`, `N=H·w`, int8 requant `h_q=round(N·127/max|N|)`; **2.58M cyc/layer**
+measured, int64-mult-bound on the rv32). `rtl/ffn_glue_unit.sv` keeps gate/up/w in BRAM and does it
+in two passes + **one reciprocal divide** (`recip=(127<<R)/max|N|`, `R=msb(max|N|)+25`, restoring
+divider) → requant `h_q=(|N|·recip>>R)·sign` — **divider-free per channel**, outputting h_q (int8) +
+max|N|. The integer oracle `models/ffn_glue_unit_ref.py` matches exact round-half-up 100%; the cocotb
+`tb_ffn_glue_unit` is **bit-exact** (512 h_q + max|N|, `FFN_GLUE_UNIT_PASS`) at **2.26 cyc/channel →
+~15.6K cyc/layer vs 2.58M host = ~165× collapse**. Synthesis: **7% LUT / 1% FF / 40% BRAM / 19 DSP**
+(Fmax ~19 MHz unpipelined; a ~6-stage pipeline closes 100 MHz at the same cycle count; immaterial as
+the glue is ~0.16% of the layer). Same BRAM-inference bug, third time: `hqmem` (6912×8) first
+synthesized as a FF array + decoder (115% LUT / 134% FF) because its write/read were in different
+always blocks — same-block write+read → simple-dual-port BRAM → 7% LUT. ([`ffn_glue_unit_syn.md`](bench/results/ffn_glue_unit_syn.md).)
+
+**(u) System recompute — nearing the bound (#47).** With **both** attention and FFN glue on-fabric:
+glue/layer 19.42M → **0.97M** (norms 0.54M + RoPE 0.08M + on-fabric attn 0.33M + on-fabric FFN glue
+0.016M), layer 28.1M → **9.65M**, token → **~330M cyc → ~1.62 J/token → ~2.3× under the RTX 3060**
+(from 1.99 / ~1.8×). The engine is now **90% of the layer**; the largest remaining glue is the **2×
+RMSNorm** (0.54M) — a small norm/quant unit is the last meaningful step toward the **1.47 J/token /
+2.5× engine bound**. `full_model_energy.png` now shows the full progression: host-split 4.32 →
++attn 1.99 → +FFN-glue 1.62 → engine bound 1.47, vs the GPU's 3.67.
+
+**Evidence tiers (updated):** *silicon-measured* — engine (1 cyc/tile), DDR3 roofline (1.42 GB/s),
+host glue (19.4M/layer), on-fabric attention (16456 cyc/query). *Sim-/synth-backed* — on-fabric FFN
+glue (15.6K cyc/layer, bit-exact, fits). *Derived* — system ~1.62 J/token (~2.3× under the GPU).
+*Still open* — RMSNorm on-fabric (→ ~1.47), full decode-loop SoC integration, live power, repro.

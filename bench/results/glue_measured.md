@@ -86,3 +86,30 @@ under the GPU**, flipped from 1.2× worse). The largest remaining glue is the **
 DRAM-bound on the host) — moving *it* on-fabric next approaches the ~1.47 J/token engine bound
 (~2.5×). Engine + glue cycle terms are silicon-measured; the attention unit is sim-/synth-backed
 (on-board SoC integration with a tuned T_MAX is the remaining step).
+
+---
+
+## Phase 7 — FFN glue on-fabric: nearing the engine bound
+
+The last big host term was the **FFN glue** (2.58M cyc/layer): per channel `H=relu(gate)²·up`
+(int64), `N=H·w`, int8 requant `h_q=round(N·127/max|N|)` — the int64 mults dominate on the rv32.
+`rtl/ffn_glue_unit.sv` (gate/up/w in BRAM, two passes + one reciprocal divide, divider-free per
+channel) is **bit-exact** vs the oracle (`FFN_GLUE_UNIT_PASS`) at **2.26 cyc/channel → ~15.6K
+cyc/layer = ~165× collapse**. Synthesis fits the 35T (**7% LUT, 1% FF, 40% BRAM, 19 DSP**; Fmax
+~19 MHz unpipelined, immaterial as the glue is ~0.16% of the layer — `ffn_glue_unit_syn.md`).
+
+Recomputed cycles/token with **both** attention and FFN glue on-fabric:
+
+| | glue/layer | layer cyc | J/token | vs RTX 3060 (3.67) |
+|---|---:|---:|---:|---:|
+| host-split (measured) | 19.42 M | 28.1 M | **4.32** | 1.2× **worse** |
+| + on-fabric attention | 3.53 M | 12.2 M | ~1.99 | ~1.8× better |
+| **+ on-fabric FFN glue** (this work) | **0.97 M** | **9.65 M** | **~1.62** | **~2.3× better** |
+| engine bound (all glue on-fabric) | ~0 | ~8.68 M | ~1.47 | ~2.5× better |
+
+New glue/layer = norms 0.54M + RoPE 0.08M + on-fabric attention 0.33M + on-fabric FFN glue 0.016M
+≈ **0.97M** — the engine (8.68M) is now **90% of the layer**. token = 30×9.65M + 41M LM-head ≈
+**330M cyc → 3.30s → ~1.62 J/token → ~2.3× under the GPU**, closing on the **1.47 J/token engine
+bound**. The largest remaining glue is now the **2× RMSNorm** (0.54M) — a small norm/quant unit is
+the next (and last meaningful) step toward the bound. Engine + host-glue terms silicon-measured;
+attention silicon-measured (16456 cyc/query); FFN glue sim-/synth-backed.
