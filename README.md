@@ -1,46 +1,101 @@
 # ternfpga
 
-**A multiplier-free, sparsity-skipping ternary LLM-inference engine on a $130 FPGA — built to beat a GPU on the axis that actually matters at the edge: energy-per-token.**
+**A multiplier-free, sparsity-skipping ternary LLM-inference engine on a \$130 FPGA — built to beat a GPU on the axis that actually matters at the edge: energy-per-token.**
 
-Batch-1 LLM *decode* is **memory-bandwidth-bound**: every token streams the whole weight matrix from memory once, at ~1–2 FLOP/byte, so the GPU's tensor cores sit idle and *moving bytes* is the cost. Two compounding escapes — and a GPU can do **neither** in silicon:
+<p align="center">
+  <img src="docs/img/energy_ladder.png" width="760" alt="Energy per token — FPGA system vs RTX 3060">
+</p>
+<p align="center"><sub><i>System energy/token (BitNet-2B-4T, batch-1 decode) as each piece of transformer "glue" moves onto the fabric. The naive design loses to the GPU; each on-fabric move drops it below the 3.67 J/tok line. The first three FPGA bars are derived from silicon-measured cycle counts; the rightmost is a projection.</i></sub></p>
 
-- **Ternary weights** (BitNet b1.58, `w ∈ {−1,0,+1}` ≈ 1.58 bit): the multiply becomes a **sign-select**, ~10× less traffic. GPUs dequantize ternary back to INT8/FP16.
-- **Activation sparsity**: BitNet b1.58's squared-ReLU FFN is **~60% zero per token** (measured — [`activation_sparsity.md`](bench/results/activation_sparsity.md)); relu-fied / ProSparse variants reach **85–95%**. Those columns never need fetching — and GPUs accelerate only rigid **2:4** structured sparsity, not the per-token *unstructured* kind.
+> 📖 **Full deep-dive writeup:** [*Multiply-Free: A Ternary LLM Engine on a \$130 FPGA*](https://nicholi.ai/2026/06/09/multiply-free-a-ternary-llm-engine-on-a-130-fpga.html) — the theory, the nine-phase silicon build, the bugs, and an honest evidence ledger.
 
-So we build **one hand-authored ternary processing element** — `acc += (w=+1 ? a : w=−1 ? −a : 0)`, a single 6-LUT, **zero DSP multipliers** — and wrap it three ways on a single Xilinx **Arty A7-35T**, benchmarked head-to-head against an **RTX 3060** in the same machine.
+## The idea: stop moving bytes
 
-![Energy per token — CPU vs GPU vs FPGA target](bench/plots/energy_per_token.png)
+Batch-1 LLM *decode* is **memory-bandwidth-bound** — every token streams the whole weight matrix from memory once, at ~1–2 FLOP/byte, so a GPU's tensor cores sit idle and *moving bytes* is the cost. Two compounding escapes cut the bytes, and a GPU can do **neither** in silicon:
 
-*Measured energy/token (BitNet-2B-4T, batch-1 decode): the RTX 3060 must dequantize ternary to bf16 and barely beats the CPU — the gap the FPGA exploits. [Data](bench/results/gpu_baseline.md) · [all figures](bench/plots/).*
+- **Ternary weights** (BitNet b1.58, `w ∈ {−1, 0, +1}` ≈ 1.58 bit): the multiply becomes a **sign-select** — a single 6-LUT, **zero DSP multipliers**. A GPU has no ternary datapath, so it dequantizes back to INT8/FP16 and pays the full memory traffic and the full multiplier energy.
+- **Activation sparsity**: BitNet's squared-ReLU FFN is **~60% zero per token** (measured); those weight columns never need fetching. GPUs accelerate only rigid **2:4** structured sparsity, not the per-token *unstructured* kind.
 
-## The three directions (one core)
+Nobody had combined **ternary × per-token unstructured sparsity on a sub-\$150 board** — that intersection is this project.
 
-| Dir | What | Honest result vs RTX 3060 |
+<p align="center">
+  <img src="docs/img/ternary_select.png" width="600" alt="The ternary multiply is a sign-and-zero select">
+</p>
+<p align="center"><sub><i>The entire "multiply" in a ternary network: <code>acc += (w=+1 ? a : w=−1 ? −a : 0)</code> — a sign-and-zero select, one 6-LUT, no hardware multiplier touched. Confirmed <b>0 DSP</b> in synthesis up to datapath width 2048.</i></sub></p>
+
+## The result, measured honestly
+
+Head-to-head on the same machine (BitNet-2B-4T, batch-1, 256 tokens):
+
+| platform | path | tok/s | power | J / token |
+|---|---|---:|---:|---:|
+| CPU 5950X | native ternary (`i2_s`) | 28.4 | ~121 W | 4.62 |
+| **RTX 3060** | **bf16 (dequantized)** | 23.5 | 86.4 W | **3.67** |
+| **FPGA Arty A7-35T** | **ternary, 0 DSP** | *slow, by design* | **~0.5 W** | **~1.62** *(derived)* |
+
+The 3060 has no ternary datapath, so it inflates BitNet to bf16 (4.87 GB) and lands at **3.67 J/token — barely better than the CPU, and slower**. The FPGA keeps the ternary structure and does the same decode at an estimated **~1.62 J/token, ~2.3× less energy**, sub-watt. It **loses on raw throughput, by design** — the win is energy-per-token and a capability the GPU lacks.
+
+<p align="center">
+  <img src="docs/img/scatter.png" width="680" alt="Throughput vs energy — CPU, GPU, FPGA">
+</p>
+<p align="center"><sub><i>The honest tradeoff. CPU and GPU cluster top-right (fast, power-hungry); the FPGA sits bottom-left (low energy, low throughput). Energy/token is ~invariant to engine width, so widening the datapath buys throughput at constant energy.</i></sub></p>
+
+**Evidence tiers** — every number labeled by how it was obtained:
+
+- **Silicon-measured** — engine **1.00 cycle/tile** (0 DSP, bit-exact), DDR3 read roofline **1.42 GB/s**, host glue **19.4M cyc/layer**, on-fabric attention **16,456 cyc/query**, on-fabric FFN glue **13,974 cyc/layer**, engine + FFN-glue **co-resident & cooperating** on one 35T (**45/50 BRAM**, bit-exact end-to-end).
+- **Derived** — system **~1.62 J/token** (~2.3× under the 3060), composed from measured cycle counts × the Vivado-estimated 0.489 W.
+- **Projected** — **~1.47 J/token** engine bound (RMSNorm also on-fabric, ~2.5×); the full three-accelerator loop in one bitstream; a metered (vs estimated) watt.
+
+> ⚠️ Power is the one un-metered input: every joule/token is *measured cycle counts × an estimated wattage*. A current-probe reading is the top open item.
+
+## Architecture
+
+One multiply-free **ternary engine** runs the seven GEMVs per layer (Q/K/V/O + gate/up/down); attention and the FFN glue became dedicated **on-fabric units**; only the RMSNorms and RoPE stay on a soft **VexRiscv** host — all on a single LiteX SoC with DDR3.
+
+<p align="center">
+  <img src="docs/img/layer_dataflow.png" width="620" alt="Decoder-layer dataflow, colored by where each op runs">
+</p>
+<p align="center"><sub><i>One BitNet decoder layer, each operation tinted by where it runs: ternary engine (terracotta) / on-fabric unit (green) / host CPU (grey). The terracotta and green are silicon; only the thin grey blocks — the norms and RoPE — remain on the host.</i></sub></p>
+
+## The build: nine phases, on real silicon
+
+Test-driven throughout — a NumPy golden and a bit-exact cocotb test land **before** every module, and each piece is carried **PyTorch → simulation → silicon**.
+
+| Phase | What landed | Result |
 |---|---|---|
-| **A** | Ternary energy/token engine | **~4–8× better energy/token** (loses ~10–15× on raw tok/s — *by design*) |
-| **D** | Skip the unstructured sparsity GPUs waste | **~2.5× on the FFN** at the measured 60% (the **10–20×** needs relu-fication to 85–95%); skips per-token FLOPs the GPU *can't* |
-| **B** | Double as the GPU's spec-decode draft engine | **~2.8× energy, ~2.7× latency** vs GPU-only |
+| 0 | Multiply-free ternary PE → flashed to the Arty | bit-exact over UART, **105 LUT, 0 DSP, ~63 mW** |
+| — | CPU + GPU energy baselines | GPU **3.67** J/tok barely beats CPU **4.62** |
+| 1 | DDR3 + RISC-V SoC (LiteX / VexRiscv / LiteDRAM) | engine as a peripheral, `GEMV_ONBOARD_PASS` |
+| 2 | Research re-scope → BRAM-centric scalable engine + FFN datapath + sparse gather | cosine 1.0 vs PyTorch; 0 DSP to width 2048; 60% sparsity measured |
+| 3 | DDR3 roofline (Risk 1) + full-layer golden + sparsity structure (Risk 2) | 1.42 GB/s; cosine 1.0; sparsity 94% data-dependent (unstructured) |
+| 4 | Fully-measured host-split glue | **glue-bound: 4.32 J/tok, 1.2× _worse_** — the honest pivot |
+| 5–6 | On-fabric attention (`rtl/attention_unit.sv`) → silicon | flips to **1.99 J/tok (~1.8× under)**, 16,456 cyc/query measured |
+| 7–8 | On-fabric FFN glue (`rtl/ffn_glue_unit.sv`) → silicon | **1.62 J/tok (~2.3× under)**, 13,974 cyc/layer (184×) measured |
+| 9 | Engine + FFN-glue **co-resident & cooperating** | bit-exact end-to-end, **45/50 BRAM** — the frontier |
 
-We **concede raw throughput on purpose** and compete on **perf/watt, batch-1 latency, and a capability the GPU lacks**. No splashy "40×" headline — the defensible, must-clear claim is **4–8× / 10–20× on identical numerics**, measured board-to-board. See [`docs/BUILD-PLAN.md`](docs/BUILD-PLAN.md).
+<p align="center">
+  <img src="docs/img/cycles_breakdown.png" width="680" alt="Where the cycles go, per layer">
+</p>
+<p align="center"><sub><i>The same arc counted in cycles: the engine base is fixed; moving glue onto the fabric collapses the dominant term (the red attention block) until the engine is 90% of the layer.</i></sub></p>
 
-## Why it's novel
-Ternary done in hardware exists (TerEffic; a full ternary BitNet on FPGA, TeLLMe — but on a ~$300 Zynq KV260, and with *no per-token sparsity*). Sparsity-on-FPGA exists (FlightLLM — on HBM datacenter parts). **Nobody has combined ternary × per-token unstructured sparsity on a sub-$150 board** ([feasibility study](docs/research/scaling-feasibility.md)). That intersection is this project.
+## The honest frontier
+
+Each accelerator is silicon-proven, and a **pair** (engine + full-width FFN-glue + the SoC) fits a 35T at **45/50 BRAM**. Adding the attention unit (~18 BRAM) needs 63 — so the **full three-accelerator decode loop in one bitstream** wants FFN-tiling or a bigger board (Arty A7-100T ~\$250 / KV260). The energy result is cycle-count-based and holds regardless of which board runs the integrated loop.
+
+<p align="center">
+  <img src="docs/img/bram_frontier.png" width="540" alt="On-chip BRAM is the wall — a pair fits, three don't">
+</p>
 
 ## Layout
 ```
-rtl/      hand-written SystemVerilog (ternary PE, sparse skip, DDR3 stream)
+rtl/      hand-written SystemVerilog (ternary engine, attention, FFN-glue, DDR3 stream)
 sim/      cocotb + verilator testbenches (TDD: tests land before RTL)
-bench/    benchmark harness + results (FPGA vs RTX 3060, energy/token)
-models/   ternary model quantization / relu-fication pipeline
-docs/     the design dossiers (A/B/D), build plan, benchmark methodology, sources
-tools/    sync-to-worker4 + build/flash helpers
+soc/      LiteX SoC builders + RISC-V firmware (engine / attention / ffn-glue / co-resident)
+models/   ternary quantization + bit-exact NumPy & PyTorch references
+bench/    benchmark harness, measured results, figures (FPGA vs RTX 3060)
+syn/      Vivado OOC synthesis + P&R fit sweep + power
+docs/     architecture, research, figures
 ```
-
-## Status
-🚧 **Phase 0** (de-risk the core in simulation). **✅ Running on real silicon** — the multiply-free ternary engine is flashed to a physical **Arty A7-35T** and verified computing **bit-exact, read back over UART** (16/16 `y==2c`, [`bench/results/onboard.md`](bench/results/onboard.md); 105 LUTs, 0 DSP, 100 MHz, **~63 mW** on-chip — ~2000× under CPU/GPU, [`bench/results/power.md`](bench/results/power.md)). Verified bit-exact in cocotb/Verilator so far: **`ternary_dot`** (multiply-free dot, 0 DSP), **`ternary_gemv`** (row-streamed matrix-vector), and **`ternary_gemv_sparse`** (activation-sparse gather — fetches only active rows; measured **50–94% weight-byte savings** at 50–6% density, [`bench/results/sparse_skip_sim.md`](bench/results/sparse_skip_sim.md)). **Energy/token head-to-head, measured** (batch-1, BitNet-2B-4T): CPU 5950X (native ternary) = **4.62 J/tok**, RTX 3060 (bf16 — *can't do ternary*, so it dequantizes) = **3.67 J/tok** and is even *slower* (23.5 vs 28.4 tok/s) ([`bench/results/gpu_baseline.md`](bench/results/gpu_baseline.md)). The GPU gets almost no benefit from the 1.58-bit weights — exactly the gap the FPGA exploits: target **~0.25–0.4 J/tok** (~10× under the 3060 on the same model) at sub-watt power. **Phase 1:** the engine runs **as a peripheral in a RISC-V SoC on the board** (LiteX VexRiscv + LiteDRAM DDR3) — the CPU drives a GEMV and reads `y` back **bit-exact** (`TERNARY_ONBOARD_PASS`, 16 rows; [`bench/results/onboard_soc_gemv.md`](bench/results/onboard_soc_gemv.md)), with 256 MB DDR3 calibrated + Memtest-OK ([`ddr3_onboard.md`](bench/results/ddr3_onboard.md)). The integrated memory→unpack→0-DSP-compute datapath is proven on silicon. **Phase 2 (scaling — de-risked):** a [feasibility study](docs/research/scaling-feasibility.md) (multi-source, adversarially verified) re-scoped the target from a *full model* (a full BitNet 0.73B does **not** fit a 35T — its ternary core alone exceeds our LUT budget; that build lives on a ~$300 KV260) down to **one real-width transformer block**, glue on the VexRiscv host. A [P&R fit sweep](bench/results/fit_sweep.md) confirms **0 DSP up to FFN width 2048** (the wall is register-resident operands → move to BRAM), and BitNet b1.58's FFN activation sparsity is now **measured at ~60%** ([data](bench/results/activation_sparsity.md)) — real and GPU-unmatchable, but below the assumed 85–95%, which needs relu-fication. **Phase 2 (build):** the FFN block datapath is proven **PyTorch → sim → silicon** — the NumPy FFN golden matches PyTorch at **cosine 1.0**, the BRAM-centric streaming GEMV (`ternary_gemv_stream`) is bit-exact and synthesizes at **479 LUT / 0 DSP / +3.5 ns @ 100 MHz** ([data](bench/results/gemv_stream.md)), the full FFN runs end-to-end through it in sim ([`tb_ffn_block`](sim/tb_ffn_block.py)), and it is **verified on the physical board** (`GEMV_ONBOARD_PASS`, 100 MHz, 0.5 W SoC; [data](bench/results/onboard_gemv_stream.md)). The `down_proj` **activation-sparse gather** skips the ~60% zero columns bit-exact — **56% weight-byte savings** at the measured sparsity ([data](bench/results/down_proj_gather.md)), rising to **~80%** on a relu-fied model (ProSparse 83% measured, [data](bench/results/relu_fication_upside.md)). **Measured on silicon:** a hardware cycle counter shows the engine sustains **1.00 cycle/tile** (800 M ternary-MAC/s, K=8 @ 100 MHz, `BENCH_ONBOARD_PASS`, bit-exact), **0 DSP**, SoC power **0.489 W** → a real BitNet-2B FFN block ≈ **66 ms / ~32 mJ** (SoC) — the 0-DSP datapath is ~an order of magnitude more energy-efficient per FFN block than the 3060 (SoC overhead is the remaining gap) ([data](bench/results/onboard_throughput_measured.md)). **Phase 3 (toward a measured full-model J/token):** a hardware DMA measured the **DDR3 read roofline at 1423 MB/s** (89% of native-port peak) — so single-channel DDR3 caps a 0.7B model at **~8 tok/s / ~60 mJ-tok floor**, usable and ~20–60× under the 3060: **the energy thesis survives Risk 1** (the K=8 engine is compute-bound at 200 MB/s — widen K to use the channel) ([data](bench/results/ddr3_roofline_measured.md)). The attention datapath is validated (golden cosine 1.0, glue `ATTN_GLUE_C_PASS`) and the **full decoder-layer golden** matches the real model at **cosine 1.0** — so the full-model energy/token, composed from the measured engine rate × real BitNet-2B dims, is **~1.47 J/token engine compute, ~2.5× under the RTX 3060's measured 3.67** ([data](bench/results/full_model_projection.md)). **Risk 2** is resolved too: the ~60% activation sparsity is **genuinely unstructured** — 94% data-dependent channels, token-to-token Jaccard 0.42, a static N:M router captures only 69% — so the on-fabric gather is the right (unoccupied) tool ([data](bench/results/sparsity_structure.md)). **Phase 4 — fully measured, honest verdict:** with the glue rewritten pure-integer (LUT RoPE/softmax, no libm) the host-glue is now **measured on silicon** (19.4M cyc/layer) → a **fully-measured ~4.32 J/token** for the host-split system. The 0-DSP **engine is ~2.5× under the GPU (1.47 J/tok)**, but the **naive host-split is glue-bound** (~1.2× *worse* than the 3060) because **83% of the glue is host-side attention, DRAM-latency-bound** on the soft CPU. The decisive lesson (matching the SOTA): **attention belongs on the fabric** ([data](bench/results/glue_measured.md)). **Phase 5 — on-fabric attention flips the verdict:** `rtl/attention_unit.sv` (KV in BRAM, int16 scores → shift+exp-LUT softmax → a·V) is **bit-exact** (`ATTENTION_UNIT_PASS`) at ~1 MAC/cycle — **~98× faster** than host attention — and **synthesizes** at 24% LUT / 4 DSP / 18.5 BRAM ([data](bench/results/attention_unit_syn.md)). Dropping it in collapses glue/layer 19.4M→3.5M, so the system flips from glue-bound (4.32 J/tok, 1.2× *worse*) to **engine-dominant: ~1.99 J/token, ~1.8× *under* the RTX 3060** — the 0-DSP engine's energy win realized at the system level (moving the FFN glue on-fabric next → the ~1.47 J/tok / 2.5× engine bound). **Phase 6 — attention on silicon:** the attention unit, integrated as a LiteX peripheral and run on the physical Arty, computes a real attention **bit-exact** (`ATTN_ONBOARD_PASS`, 128 num + sum_e) at a **silicon-measured 16456 cyc/query** (~1 MAC/cycle → ~49× under host attention) — so attention now has the full **PyTorch→sim→silicon** chain and the ~1.8×-under-GPU system result's key term is silicon-confirmed ([data](bench/results/attention_onboard.md)). **Phase 7 — FFN glue on-fabric, nearing the bound:** `rtl/ffn_glue_unit.sv` moves the last big host term (the FFN inter-projection glue, `relu(gate)²·up·w` + int8 requant, 2.58M cyc/layer) onto the fabric — **bit-exact** (`FFN_GLUE_UNIT_PASS`), **~165× collapse** (15.6K cyc/layer), fitting at **7% LUT / 1% FF / 40% BRAM / 19 DSP** ([data](bench/results/ffn_glue_unit_syn.md)). With both attention and FFN glue on-fabric, glue/layer falls 19.4M→**0.97M** (the engine is now **90% of the layer**) → **~1.62 J/token, ~2.3× under the RTX 3060**, closing on the **1.47 J/token / 2.5× engine bound** (the 2× RMSNorm at 0.54M is now the largest glue). **Phase 8 — FFN glue on silicon:** the FFN-glue unit was pipelined (8 stages, WNS −42.7→−1.9 ns), integrated as a LiteX peripheral, and run on the physical Arty — **bit-exact** (`FFNGLUE_ONBOARD_PASS`, 6912 h_q + max|N|) at a **silicon-measured 13974 cyc/layer (184× collapse)** ([data](bench/results/ffn_glue_onboard.md)). So **3 of the 4 system cycle terms are now silicon-measured** (engine, attention, FFN glue); only the 2× RMSNorm and the fully-integrated loop remain projected. **Phase 9 — two accelerators co-resident + cooperating on silicon:** the ternary engine and the full-width FFN-glue unit, instantiated in **one** SoC and run on the physical Arty, **cooperate** — the engine computes the gate/up ternary GEMVs and its int32 outputs feed `ffn_glue`, `h_q` read back **bit-exact end-to-end** (`COMBINED_ONBOARD_PASS`, the first multi-accelerator computation on the board) at **45/50 BRAM** ([data](bench/results/coresident_onboard.md)). This proves the custom accelerators co-reside *and* hand off data on real silicon; it also pins the honest frontier — a *pair* fits (45 BRAM), but +attention (~18) → 63 > 50, so the **full three-accelerator decode loop needs F-tiling or a bigger board** (A7-100T ~$250 / KV260). _Open: RMSNorm on-fabric (→ ~1.47); the full 3-accelerator loop (tiling/bigger board); live power; independent repro._ **Synthesis (`xc7a35t`):** all three modules use **0 DSPs** (multiply path is pure LUT+CARRY), <2.5% LUTs, ~104–116 MHz unpipelined → **~280 MHz pipelined** (`ternary_dot_pipe`, 2.7×, still 0 DSP) ([`bench/results/utilization.md`](bench/results/utilization.md)). **Model→RTL:** real BitNet ternary weights (1bitLLM 0.7B, layer-0 `gate_proj`) run **bit-exact** through the engine via the export pipeline ([`models/`](models/)). Build log: [`BUILDLOG.md`](BUILDLOG.md) · architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
-
-## Hardware / toolchain
-Arty A7-35T (`xc7a35t`) on dev host `worker4` · Vivado 2025.2 + verilator + cocotb + openFPGALoader · RTX 3060 12 GB as the benchmark baseline.
 
 ## Reproduce
 ```bash
@@ -48,10 +103,13 @@ pip install -r requirements.txt     # + a system Verilator 5.020 install
 bash tools/repro.sh                 # RTL sim suite (every DUT bit-exact, 0 DSP) + encoding test + figures
 bash tools/repro.sh --full          # also validate the FFN golden vs PyTorch (needs torch + the model)
 ```
-FPGA synthesis (`syn/run_synth.sh`, `syn/fit_sweep.sh`), bitstream + on-board (`soc/`, `soc/README.md`) are separate flows.
+FPGA synthesis (`syn/run_synth.sh`, `syn/fit_sweep.sh`) and the on-board SoC builds + firmware (`soc/`, `soc/README.md`) are separate flows.
 
-## Contributing
-Test-first, benchmark-early. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
+## Hardware / toolchain
+Arty A7-35T (`xc7a35t`) · Vivado 2025.2 + Verilator + cocotb + openFPGALoader · RTX 3060 12 GB as the benchmark baseline. Full dated narrative in [`BUILDLOG.md`](BUILDLOG.md); architecture in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+## Status
+✅ **The nine-phase silicon arc is complete.** The multiply-free engine, on-fabric attention, and on-fabric FFN-glue are each bit-exact on a physical Arty A7-35T; a pair co-resides and cooperates on one board; the system reaches an estimated **~1.62 J/token, ~2.3× under the RTX 3060**. _Open:_ RMSNorm on-fabric (→ ~1.47 J/tok / 2.5×), the full three-accelerator loop (tiling or a bigger board), a metered watt, and independent reproduction.
 
 ## License
 [Apache-2.0](LICENSE).
